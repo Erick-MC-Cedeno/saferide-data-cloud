@@ -26,6 +26,9 @@ export class User {
 
     @Prop()
     token: string;
+    
+    @Prop({ required: false, unique: true })
+    firebaseUid?: string;
 
     @Prop({ default: false })
     isValid: boolean;

@@ -162,4 +162,36 @@ async sendVerificationEmail(email: string): Promise<boolean> {
     await user.save();
     return { message: 'Perfil actualizado con éxito' };
   }
+
+  // Ensure a user exists for the given email; create a minimal user if missing.
+  async ensureUserByEmail(email: string, fullName?: string, firebaseUid?: string) {
+    let user = await this.getUserByEmail(email);
+    if (user) {
+      // update firebaseUid if provided and missing
+      if (firebaseUid && !user.firebaseUid) {
+        user.firebaseUid = firebaseUid;
+        await user.save();
+      }
+      return user;
+    }
+
+    // create minimal user
+    const [firstName, ...rest] = (fullName || '').split(' ');
+    const lastName = rest.join(' ') || '';
+    const randomPassword = Math.random().toString(36).slice(-12) + 'A1!';
+    const hashed = await this.hashService.hashPassword(randomPassword);
+
+    const created = new this.userModel({
+      firstName: firstName || '',
+      lastName: lastName,
+      email,
+      password: hashed,
+      token: '',
+      isValid: true,
+      isTokenEnabled: false,
+      firebaseUid: firebaseUid ?? undefined,
+    });
+
+    return created.save();
+  }
 }

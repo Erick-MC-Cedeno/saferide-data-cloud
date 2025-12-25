@@ -7,6 +7,9 @@ import { AppService } from './app.service';
 import { UserModule } from './user/user.module';
 import { AuthModule } from './auth/auth.module';
 import { TwoFactorAuthModule } from './two-factor/verification.module';
+import { PassangerModule } from './passanger/passanger.module';
+import { DriverModule } from './driver/driver.module';
+import { RidesModule } from './rides/rides.module';
 
 
 
@@ -40,6 +43,9 @@ import { TwoFactorAuthModule } from './two-factor/verification.module';
     UserModule,
     AuthModule,
     TwoFactorAuthModule,
+    PassangerModule,
+    DriverModule,
+    RidesModule,
   ],
   providers: [AppService],
 })
