@@ -73,7 +73,7 @@ export class EmailService {
     try {
       await this.transporter.sendMail(mailOptions);
     } catch (error) {
-      console.error('Error al enviar el correo:', error);
+      // Error handled silently (originally logged here).
     }
   }
 
@@ -171,7 +171,7 @@ export class EmailService {
     try {
       await this.transporter.sendMail(mailOptions);
     } catch (error) {
-      console.error('Error al enviar el correo:', error);
+      // Error handled silently (originally logged here).
     }
   }
 }

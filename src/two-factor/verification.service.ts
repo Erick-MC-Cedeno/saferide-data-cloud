@@ -39,7 +39,7 @@ export class TwoFactorAuthService {
       await tokenEntry.save();
       return { isValid: true, message: 'Token validado correctamente' };
     } catch (error) {
-      console.error('Error en la verificación del token', error);
+      // Error handled and converted to HTTP error (originally logged here).
       throw new InternalServerErrorException('Error en la verificación del token.');
     }
   }

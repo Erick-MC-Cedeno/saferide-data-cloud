@@ -13,7 +13,7 @@ import { ConfigService } from '@nestjs/config';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  console.log('process.env:', process.env);
+  // Environment is loaded by ConfigService; avoid logging env variables here.
 
   app.enableCors({
     origin: ['http://localhost:3000'],
