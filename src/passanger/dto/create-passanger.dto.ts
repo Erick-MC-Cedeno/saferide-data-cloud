@@ -14,16 +14,16 @@ export class CreatePassangerDto {
   @IsString()
   phone: string;
 
-  @IsOptional()
   @IsString()
+  @IsNotEmpty()
   @MinLength(8)
   @MaxLength(50)
   @Matches(/(?:(?=.*\d)|(?=.*\W+))(?![.\n])(?=.*[A-Z])(?=.*[a-z]).*$/, {
     message: 'La contraseña debe contener mayúsculas, minúsculas y números',
   })
-  password?: string;
+  password: string;
 
-  @IsOptional()
   @IsString()
-  confirmPassword?: string;
+  @IsNotEmpty()
+  confirmPassword: string;
 }

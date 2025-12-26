@@ -5,8 +5,8 @@ export type DriverDocument = Driver & Document;
 
 @Schema({ timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } })
 export class Driver {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: false })
-  user?: Types.ObjectId;
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  user: Types.ObjectId;
 
   @Prop({ required: true, unique: true })
   email: string;

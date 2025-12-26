@@ -26,40 +26,40 @@ export class CreateDriverDto {
   @Transform(({ value, obj }) => value ?? obj?.vehicle_plate)
   vehiclePlate: string;
 
-  @IsOptional()
   @IsString()
-  vehicle_plate?: string;
+  @IsNotEmpty()
+  vehicle_plate: string;
 
   @IsString()
   @Transform(({ value, obj }) => value ?? obj?.vehicle_model)
   vehicleModel: string;
 
-  @IsOptional()
   @IsString()
-  vehicle_model?: string;
+  @IsNotEmpty()
+  vehicle_model: string;
 
   @IsString()
   @Transform(({ value, obj }) => value ?? obj?.vehicle_year)
   vehicleYear: string;
 
-  @IsOptional()
   @IsString()
-  vehicle_year?: string;
+  @IsNotEmpty()
+  vehicle_year: string;
 
   @IsBoolean()
   @IsOptional()
   is_verified?: boolean;
 
-  @IsOptional()
   @IsString()
+  @IsNotEmpty()
   @MinLength(8)
   @MaxLength(50)
   @Matches(/(?:(?=.*\d)|(?=.*\W+))(?![.\n])(?=.*[A-Z])(?=.*[a-z]).*$/, {
     message: 'La contraseña debe contener mayúsculas, minúsculas y números',
   })
-  password?: string;
+  password: string;
 
-  @IsOptional()
   @IsString()
-  confirmPassword?: string;
+  @IsNotEmpty()
+  confirmPassword: string;
 }
