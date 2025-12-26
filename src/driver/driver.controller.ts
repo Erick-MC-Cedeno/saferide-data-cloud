@@ -29,6 +29,11 @@ export class DriverController {
     return { user: ensured, driver };
   }
 
+  @Get()
+  getAll() {
+    return this.svc.findAll();
+  }
+
   @Get('online')
   online() {
     return this.svc.findAllOnline();

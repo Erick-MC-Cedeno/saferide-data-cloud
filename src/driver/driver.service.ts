@@ -63,6 +63,10 @@ export class DriverService {
     return this.driverModel.find({ is_online: true }).exec();
   }
 
+  async findAll() {
+    return this.driverModel.find().exec();
+  }
+
   async updateByEmail(email: string, data: UpdateDriverDto) {
     if (data.email) {
       const user = await this.userService.getUserByEmail(data.email).catch(() => null);

@@ -1,7 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 
-import Redis from 'ioredis'
+import { createClient } from 'redis'
 
 import session from 'express-session';
 import passport from 'passport';
@@ -33,10 +33,28 @@ async function bootstrap() {
 
   
 
-  const redisClient = new Redis({
-    host: configService.get<string>('REDIS_HOST') as string,
-    port: parseInt(configService.get<string>('REDIS_PORT') as string)
+  const redisClient = createClient({
+    socket: {
+      host: configService.get<string>('REDIS_HOST') as string,
+      port: parseInt(configService.get<string>('REDIS_PORT') as string)
+    }
   });
+
+  redisClient.on('error', (err) => {
+    console.error('Redis Client Error', err);
+  });
+
+  // attempt to connect to Redis but don't block startup indefinitely
+  let redisConnected = true;
+  try {
+    await Promise.race([
+      redisClient.connect(),
+      new Promise((_res, rej) => setTimeout(() => rej(new Error('Redis connect timeout')), 5000)),
+    ]);
+  } catch (err) {
+    console.error('Could not connect to Redis, proceeding without Redis store:', err);
+    redisConnected = false;
+  }
 
   const connectRedisModule = require('connect-redis');
 
@@ -71,20 +89,29 @@ async function bootstrap() {
 
   let redisStoreInstance: any;
   try {
-    redisStoreInstance = new RedisStoreClass({ client: redisClient });
+    if (redisConnected) {
+      try {
+        redisStoreInstance = new RedisStoreClass({ client: redisClient });
+      } catch (err) {
+        // some connect-redis builds export a factory function
+        redisStoreInstance = RedisStoreClass({ client: redisClient });
+      }
+    }
   } catch (err) {
-    redisStoreInstance = RedisStoreClass({ client: redisClient });
+    console.error('Failed to initialize Redis store, falling back to MemoryStore:', err);
+    redisStoreInstance = undefined;
   }
 
-  app.use(
-    session({
-      store: redisStoreInstance,
-      secret: configService.get<string>('TOKEN_SECRET') as string,
-      resave: false,
-      saveUninitialized: false,
-      cookie: { maxAge: parseInt(configService.get<string>('EXPIRE_IN') as string) },
-    }),
-  );
+  const sessionOptions: any = {
+    secret: configService.get<string>('TOKEN_SECRET') as string,
+    resave: false,
+    saveUninitialized: false,
+    cookie: { maxAge: parseInt(configService.get<string>('EXPIRE_IN') as string) },
+  };
+
+  if (redisStoreInstance) sessionOptions.store = redisStoreInstance;
+
+  app.use(session(sessionOptions));
 
   app.use(passport.initialize());
   app.use(passport.session());
