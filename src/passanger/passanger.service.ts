@@ -16,6 +16,40 @@ export class PassangerService {
   ) {}
 
   async create(data: CreatePassangerDto) {
+    const [firstName, ...rest] = (data.name || '').split(' ');
+    const lastName = rest.join(' ') || '';
+
+    // Validate that the email is not already registered in `users`.
+    const existingUser = await this.userService.getUserByEmail(data.email).catch(() => null);
+    if (existingUser) {
+      throw new BadRequestException('Email already registered');
+    }
+
+    // If passwords were provided, ensure they match
+    if (data.password || (data as any).confirmPassword) {
+      if (!data.password || !(data as any).confirmPassword || data.password !== (data as any).confirmPassword) {
+        throw new BadRequestException('Passwords do not match');
+      }
+    }
+
+    // Ensure there is a full `User` record for this email (creates if missing).
+    const ensured = await this.userService.ensureFullUserByEmail(data.email, `${firstName} ${lastName}`, data.password).catch((e) => {
+      console.error('[PassangerService] ensureFullUserByEmail error', e && (e as any).message ? (e as any).message : e);
+      return null;
+    });
+    if (ensured) {
+      // ensure role is set to passenger
+      try {
+        if ((ensured as any).role !== 'passenger') {
+          (ensured as any).role = 'passenger';
+          await (ensured as any).save();
+        }
+      } catch (e) {
+        console.error('[PassangerService] failed to set role on user', e && (e as any).message ? (e as any).message : e);
+      }
+      data.user = (ensured as any)._id.toString();
+    }
+
     // prevent duplicates within passangers
     const existsPassanger = await this.passangerModel.findOne({ $or: [{ email: data.email }, { phone: data.phone }] }).exec();
     if (existsPassanger) {
@@ -35,16 +69,13 @@ export class PassangerService {
       phone: data.phone,
     };
 
-    // if controller already provided a `user` id, use it; otherwise ensure/create a User
     if (data.user) {
       payload.user = data.user as any;
-    } else {
-      const user = await this.userService.ensureUserByEmail(data.email, data.name).catch(() => null);
-      if (user) payload.user = user._id as any;
     }
 
     const created = new this.passangerModel(payload);
-    return created.save();
+    const passanger = await created.save();
+    return { user: ensured, passanger };
   }
 
   async findByEmail(email: string) {

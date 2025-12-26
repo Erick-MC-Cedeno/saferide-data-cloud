@@ -26,10 +26,6 @@ export class UserController {
     private readonly authService: AuthService
   ) {}
 
-  @Post('register')
-  registerUser(@Body() createUserDto: CreateUserDto) {
-    return this.userService.register(createUserDto);
-  }
 
   @UseGuards(LocalAuthGuard)
   @Post('login')

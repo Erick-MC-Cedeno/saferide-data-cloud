@@ -16,6 +16,41 @@ export class DriverService {
   ) {}
 
   async create(data: CreateDriverDto) {
+    const [firstName, ...rest] = (data.name || '').split(' ');
+    const lastName = rest.join(' ') || '';
+
+    // Ensure the user/email is not already registered in users
+    const existingUser = await this.userService.getUserByEmail(data.email).catch(() => null);
+    if (existingUser) {
+      throw new BadRequestException('Email already registered');
+    }
+
+    // If passwords were provided, ensure they match
+    if (data.password || (data as any).confirmPassword) {
+      if (!data.password || !(data as any).confirmPassword || data.password !== (data as any).confirmPassword) {
+        throw new BadRequestException('Passwords do not match');
+      }
+    }
+
+    const ensured = await this.userService
+      .ensureFullUserByEmail(data.email, `${firstName} ${lastName}`, data.password)
+      .catch((e) => {
+        console.error('[DriverService] ensureFullUserByEmail error', e && (e as any).message ? (e as any).message : e);
+        return null;
+      });
+
+    if (ensured) {
+      try {
+        if ((ensured as any).role !== 'driver') {
+          (ensured as any).role = 'driver';
+          await (ensured as any).save();
+        }
+      } catch (e) {
+        console.error('[DriverService] failed to set role on user', e && (e as any).message ? (e as any).message : e);
+      }
+      data.user = (ensured as any)._id.toString();
+    }
+
     // prevent duplicates within drivers
     const existsDriver = await this.driverModel.findOne({ $or: [{ email: data.email }, { phone: data.phone }] }).exec();
     if (existsDriver) {
@@ -43,13 +78,11 @@ export class DriverService {
 
     if (data.user) {
       payload.user = data.user as any;
-    } else {
-      const user = await this.userService.ensureUserByEmail(data.email, data.name).catch(() => null);
-      if (user) payload.user = user._id as any;
     }
 
     const created = new this.driverModel(payload);
-    return created.save();
+    const driver = await created.save();
+    return { user: ensured, driver };
   }
 
   async findByPhone(phone: string) {
