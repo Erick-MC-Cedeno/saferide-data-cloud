@@ -31,11 +31,13 @@ export class PassangerController {
   }
 
   @Get()
+  @UseGuards(AuthenticatedGuard)
   findAll() {
     return this.svc.findAll();
   }
 
   @Get(':email')
+  @UseGuards(AuthenticatedGuard)
   findByEmail(@Param('email') email: string) {
     return this.svc.findByEmail(email);
   }

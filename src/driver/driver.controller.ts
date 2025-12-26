@@ -29,17 +29,16 @@ export class DriverController {
     return { user: ensured, driver };
   }
 
-  @Get()
-  getAll() {
-    return this.svc.findAll();
-  }
+  
 
   @Get('online')
+  @UseGuards(AuthenticatedGuard)
   online() {
     return this.svc.findAllOnline();
   }
 
   @Get(':email')
+  @UseGuards(AuthenticatedGuard)
   findByEmail(@Param('email') email: string) {
     return this.svc.findByEmail(email);
   }
@@ -48,5 +47,11 @@ export class DriverController {
   @Patch(':email')
   update(@Param('email') email: string, @Body() body: UpdateDriverDto) {
     return this.svc.updateByEmail(email, body);
+  }
+
+  @Get()
+  @UseGuards(AuthenticatedGuard)
+  getAll() {
+    return this.svc.findAll();
   }
 }
