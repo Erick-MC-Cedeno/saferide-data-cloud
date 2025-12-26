@@ -28,6 +28,12 @@ export class UserService {
 
   async register(createUserDto: CreateUserDto) {
     console.log('[UserService.register] creating user with email=', createUserDto.email);
+    // validate confirmPassword if provided
+    if ((createUserDto as any).confirmPassword && createUserDto.password !== (createUserDto as any).confirmPassword) {
+      console.log('[UserService.register] password and confirmPassword do not match for email=', createUserDto.email);
+      throw new BadRequestException('Passwords do not match');
+    }
+
     const createUser = new this.userModel(createUserDto);
     const user = await this.getUserByEmail(createUserDto.email);
     if (user) {

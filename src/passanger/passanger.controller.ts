@@ -17,6 +17,13 @@ export class PassangerController {
       throw new BadRequestException('Email already registered');
     }
 
+    // If passwords were provided, ensure they match
+    if (body.password || (body as any).confirmPassword) {
+      if (!body.password || !(body as any).confirmPassword || body.password !== (body as any).confirmPassword) {
+        throw new BadRequestException('Passwords do not match');
+      }
+    }
+
     // Ensure there is a full `User` record for this email (creates if missing).
     const [firstName, ...rest] = (body.name || '').split(' ');
     const lastName = rest.join(' ') || '';
@@ -25,7 +32,18 @@ export class PassangerController {
       return null;
     });
     console.log('[PassangerController] ensured user=', ensured && (ensured as any)._id ? (ensured as any)._id.toString() : null);
-    if (ensured) body.user = (ensured as any)._id.toString();
+    if (ensured) {
+      // ensure role is set to passenger
+      try {
+        if ((ensured as any).role !== 'passenger') {
+          (ensured as any).role = 'passenger';
+          await (ensured as any).save();
+        }
+      } catch (e) {
+        console.error('[PassangerController] failed to set role on user', e && (e as any).message ? (e as any).message : e);
+      }
+      body.user = (ensured as any)._id.toString();
+    }
     const passanger = await this.svc.create(body);
     return { user: ensured, passanger };
   }

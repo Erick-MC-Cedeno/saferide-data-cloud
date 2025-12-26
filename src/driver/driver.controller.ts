@@ -19,12 +19,30 @@ export class DriverController {
         throw new BadRequestException('Email already registered');
       }
 
+      // If passwords were provided, ensure they match
+      if (body.password || (body as any).confirmPassword) {
+        if (!body.password || !(body as any).confirmPassword || body.password !== (body as any).confirmPassword) {
+          throw new BadRequestException('Passwords do not match');
+        }
+      }
+
       const ensured = await this.userService.ensureFullUserByEmail(body.email, `${firstName} ${lastName}`, body.password).catch((e) => {
         console.error('[DriverController] ensureFullUserByEmail error', e && (e as any).message ? (e as any).message : e);
         return null;
       });
       console.log('[DriverController] ensured user=', ensured && (ensured as any)._id ? (ensured as any)._id.toString() : null);
-      if (ensured) body.user = (ensured as any)._id.toString();
+      if (ensured) {
+        // ensure role is set to driver
+        try {
+          if ((ensured as any).role !== 'driver') {
+            (ensured as any).role = 'driver';
+            await (ensured as any).save();
+          }
+        } catch (e) {
+          console.error('[DriverController] failed to set role on user', e && (e as any).message ? (e as any).message : e);
+        }
+        body.user = (ensured as any)._id.toString();
+      }
     const driver = await this.svc.create(body);
     return { user: ensured, driver };
   }

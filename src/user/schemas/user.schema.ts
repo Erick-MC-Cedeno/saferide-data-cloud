@@ -27,6 +27,9 @@ export class User {
     @Prop()
     token: string;
     
+    @Prop({ enum: ['none', 'passenger', 'driver', 'both'], default: 'none' })
+    role: string;
+    
 
     @Prop({ default: false })
     isValid: boolean;

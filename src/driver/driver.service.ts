@@ -37,7 +37,8 @@ export class DriverService {
       vehicle_plate: (data as any).vehiclePlate || (data as any).vehicle_plate,
       vehicle_model: (data as any).vehicleModel || (data as any).vehicle_model,
       vehicle_year: (data as any).vehicleYear || (data as any).vehicle_year,
-      is_verified: (data as any).is_verified ?? false,
+      // Always start as not verified when registering a driver; verification should be done separately
+      is_verified: false,
     };
 
     if (data.user) {
