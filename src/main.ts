@@ -24,11 +24,14 @@ async function bootstrap() {
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
-      forbidNonWhitelisted: true
+      forbidNonWhitelisted: true,
+      transform: true,
     })
   );
   
   const configService = app.get(ConfigService);
+
+  
 
   const redisClient = new Redis({
     host: configService.get<string>('REDIS_HOST') as string,

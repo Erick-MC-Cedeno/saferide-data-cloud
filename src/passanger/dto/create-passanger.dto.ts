@@ -5,10 +5,6 @@ export class CreatePassangerDto {
   @IsOptional()
   user?: string; // referencia al User (ObjectId)
 
-  @IsString()
-  @IsNotEmpty()
-  uid: string;
-
   @IsEmail()
   email: string;
 

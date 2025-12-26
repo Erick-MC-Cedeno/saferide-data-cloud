@@ -20,10 +20,14 @@ export class LocalStrategy extends PassportStrategy(Strategy) {
         if (!user) {
             throw new UnauthorizedException("Credenciales incorrectas!");
         }
-        await this.emailService.sendLoginNotificationEmail( email);
 
-        return {
-            message: "Código de verificación enviado a tu correo electrónico."
-        };
+        // send a login notification but return the user object for Passport
+        try {
+            await this.emailService.sendLoginNotificationEmail(email);
+        } catch (err) {
+            // don't block authentication if email sending fails
+        }
+
+        return user;
     }
 }

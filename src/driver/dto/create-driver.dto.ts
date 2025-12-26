@@ -1,14 +1,11 @@
 import { IsBoolean, IsNotEmpty, IsOptional, IsString, IsMongoId, IsEmail, MinLength, MaxLength, Matches } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class CreateDriverDto {
   @IsMongoId()
   @IsOptional()
   user?: string; // referencia al User (ObjectId)
-
-  @IsString()
-  @IsNotEmpty()
-  uid: string;
-
+  
   @IsEmail()
   email: string;
 
@@ -17,18 +14,37 @@ export class CreateDriverDto {
 
   @IsString()
   phone: string;
+  @IsString()
+  @Transform(({ value, obj }) => value ?? obj?.license_number)
+  licenseNumber: string;
+
+  @IsOptional()
+  @IsString()
+  license_number?: string;
 
   @IsString()
-  license_number: string;
+  @Transform(({ value, obj }) => value ?? obj?.vehicle_plate)
+  vehiclePlate: string;
+
+  @IsOptional()
+  @IsString()
+  vehicle_plate?: string;
 
   @IsString()
-  vehicle_plate: string;
+  @Transform(({ value, obj }) => value ?? obj?.vehicle_model)
+  vehicleModel: string;
+
+  @IsOptional()
+  @IsString()
+  vehicle_model?: string;
 
   @IsString()
-  vehicle_model: string;
+  @Transform(({ value, obj }) => value ?? obj?.vehicle_year)
+  vehicleYear: string;
 
+  @IsOptional()
   @IsString()
-  vehicle_year: string;
+  vehicle_year?: string;
 
   @IsBoolean()
   @IsOptional()

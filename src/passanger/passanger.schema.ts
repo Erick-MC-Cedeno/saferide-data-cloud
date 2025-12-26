@@ -9,15 +9,13 @@ export class Passanger {
   user?: Types.ObjectId;
 
   @Prop({ required: true, unique: true })
-  uid: string;
-
-  @Prop({ required: true, unique: true })
   email: string;
 
   @Prop({ required: true })
   name: string;
 
   @Prop({ required: true })
+  @Prop({ required: true, unique: true })
   phone: string;
 
   @Prop({ type: Number, default: 0.0 })
@@ -28,6 +26,15 @@ export class Passanger {
 
   @Prop({ type: String, default: null })
   profile_image?: string;
+
+  @Prop({ type: String, unique: true, sparse: true })
+  uid?: string;
 }
 
 export const PassangerSchema = SchemaFactory.createForClass(Passanger);
+
+// Ensure uid is unique only when present (ignore documents without uid/null)
+PassangerSchema.index(
+  { uid: 1 },
+  { unique: true, partialFilterExpression: { uid: { $exists: true, $ne: null } } },
+);

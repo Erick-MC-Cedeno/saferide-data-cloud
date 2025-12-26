@@ -9,15 +9,17 @@ export class SessionSerializer extends PassportSerializer {
     }
 
     serializeUser(user: any, done: (err: Error | null, user: any) => void): any {
-        done(null, {
-            email: user.email,
-            firstName: user.firstName,
-            lastName: user.lastName
-        });
+        // store only the user id in the session to keep size small and secure
+        const id = (user && (user._id || user.id)) ? (user._id || user.id).toString() : user;
+        done(null, id);
     }
 
     async deserializeUser(payload: any, done: (err: Error | null, user: any) => void): Promise<any> {
-        const user = await this.userService.getUserByEmail(payload.email);
-        done(null, user);
+        try {
+            const user = await this.userService.getUserById(payload as string);
+            done(null, user || null);
+        } catch (err) {
+            done(err as Error, null);
+        }
     }
 }

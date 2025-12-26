@@ -27,8 +27,6 @@ export class User {
     @Prop()
     token: string;
     
-    @Prop({ required: false, unique: true })
-    firebaseUid?: string;
 
     @Prop({ default: false })
     isValid: boolean;
@@ -39,3 +37,4 @@ export class User {
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
+

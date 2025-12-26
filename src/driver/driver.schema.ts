@@ -9,15 +9,13 @@ export class Driver {
   user?: Types.ObjectId;
 
   @Prop({ required: true, unique: true })
-  uid: string;
-
-  @Prop({ required: true, unique: true })
   email: string;
 
   @Prop({ required: true })
   name: string;
 
   @Prop({ required: true })
+  @Prop({ required: true, unique: true })
   phone: string;
 
   @Prop({ required: true })

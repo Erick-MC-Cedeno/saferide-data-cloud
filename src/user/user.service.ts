@@ -22,15 +22,28 @@ export class UserService {
     return this.userModel.findOne({ email }).exec();
   }
 
+  async getUserById(id: string) {
+    return this.userModel.findById(id).exec();
+  }
+
   async register(createUserDto: CreateUserDto) {
+    console.log('[UserService.register] creating user with email=', createUserDto.email);
     const createUser = new this.userModel(createUserDto);
     const user = await this.getUserByEmail(createUserDto.email);
     if (user) {
+      console.log('[UserService.register] user already exists for email=', createUserDto.email);
       throw new BadRequestException();
     }
 
     createUser.password = await this.hashService.hashPassword(createUser.password);
-    return createUser.save();
+    try {
+      const saved = await createUser.save();
+      console.log('[UserService.register] saved user id=', saved._id?.toString());
+      return saved;
+    } catch (err) {
+      console.error('[UserService.register] error saving user', err && (err as any).message ? (err as any).message : err);
+      throw err;
+    }
   }
 
   async isEmailVerified(email: string): Promise<{ isVerified: boolean; message: string }> {
@@ -164,34 +177,41 @@ async sendVerificationEmail(email: string): Promise<boolean> {
   }
 
   // Ensure a user exists for the given email; create a minimal user if missing.
-  async ensureUserByEmail(email: string, fullName?: string, firebaseUid?: string) {
-    let user = await this.getUserByEmail(email);
-    if (user) {
-      // update firebaseUid if provided and missing
-      if (firebaseUid && !user.firebaseUid) {
-        user.firebaseUid = firebaseUid;
-        await user.save();
-      }
-      return user;
-    }
+  async ensureUserByEmail(email: string, fullName?: string) {
+    if (!email) throw new BadRequestException('Email required to ensure user');
 
-    // create minimal user
+    const user = await this.getUserByEmail(email);
+    // Do NOT create a minimal user here. Only return existing user or null.
+    return user || null;
+  }
+
+  // Ensure a full User record exists for the given email. If it doesn't, create
+  // one using the provided password or a generated secure password. Returns the
+  // created or existing User.
+  async ensureFullUserByEmail(email: string, fullName?: string, password?: string) {
+    if (!email) throw new BadRequestException('Email required to ensure user');
+
+    const existing = await this.getUserByEmail(email);
+    if (existing) return existing;
+
     const [firstName, ...rest] = (fullName || '').split(' ');
     const lastName = rest.join(' ') || '';
-    const randomPassword = Math.random().toString(36).slice(-12) + 'A1!';
-    const hashed = await this.hashService.hashPassword(randomPassword);
+    const pw = password || (Math.random().toString(36).slice(-12) + 'A1!a');
 
-    const created = new this.userModel({
-      firstName: firstName || '',
-      lastName: lastName,
-      email,
-      password: hashed,
-      token: '',
-      isValid: true,
-      isTokenEnabled: false,
-      firebaseUid: firebaseUid ?? undefined,
-    });
-
-    return created.save();
+    try {
+      return await this.register({
+        firstName: firstName || '',
+        lastName: lastName,
+        email,
+        password: pw,
+        confirmPassword: pw,
+      });
+    } catch (err: any) {
+      // If user was created concurrently, return the existing user
+      if (err instanceof BadRequestException) {
+        return this.getUserByEmail(email);
+      }
+      throw err;
+    }
   }
 }

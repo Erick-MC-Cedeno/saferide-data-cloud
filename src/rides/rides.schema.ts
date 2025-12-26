@@ -9,7 +9,7 @@ export class Ride {
   passenger?: Types.ObjectId;
 
   @Prop({ required: true })
-  passenger_uid: string;
+  passenger_email: string;
 
   @Prop({ required: true })
   passenger_name: string;
@@ -18,7 +18,7 @@ export class Ride {
   driver?: Types.ObjectId;
 
   @Prop()
-  driver_uid?: string;
+  driver_email?: string;
 
   @Prop()
   driver_name?: string;

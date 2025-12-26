@@ -17,9 +17,9 @@ export class RidesService {
 
   async create(dto: CreateRideDto) {
     const data: Partial<Ride> = {
-      passenger_uid: dto.passenger_uid,
+      passenger_email: dto.passenger_email,
       passenger_name: dto.passenger_name,
-      driver_uid: dto.driver_uid,
+      driver_email: dto.driver_email,
       driver_name: dto.driver_name,
       pickup_address: dto.pickup_address,
       pickup_coordinates: dto.pickup_coordinates,
@@ -32,11 +32,11 @@ export class RidesService {
     };
 
     // try to resolve passenger and driver object references
-    const passenger = await this.passangerService.findByUid(dto.passenger_uid).catch(() => null);
+    const passenger = await this.passangerService.findByEmail(dto.passenger_email).catch(() => null);
     if (passenger) data.passenger = (passenger as any)._id;
 
-    if (dto.driver_uid) {
-      const driver = await this.driverService.findByUid(dto.driver_uid).catch(() => null);
+    if (dto.driver_email) {
+      const driver = await this.driverService.findByEmail(dto.driver_email).catch(() => null);
       if (driver) data.driver = (driver as any)._id;
     }
 
@@ -53,12 +53,12 @@ export class RidesService {
     return this.rideModel.findById(id).exec();
   }
 
-  async findByPassengerUid(uid: string) {
-    return this.rideModel.find({ passenger_uid: uid }).exec();
+  async findByPassengerEmail(email: string) {
+    return this.rideModel.find({ passenger_email: email }).exec();
   }
 
-  async findByDriverUid(uid: string) {
-    return this.rideModel.find({ driver_uid: uid }).exec();
+  async findByDriverEmail(email: string) {
+    return this.rideModel.find({ driver_email: email }).exec();
   }
 
   async updateById(id: string, dto: UpdateRideDto) {

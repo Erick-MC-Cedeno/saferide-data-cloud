@@ -3,7 +3,7 @@ import { IsArray, IsNotEmpty, IsNumber, IsOptional, IsString, ArrayMinSize } fro
 export class CreateRideDto {
   @IsString()
   @IsNotEmpty()
-  passenger_uid: string;
+  passenger_email: string;
 
   @IsString()
   @IsNotEmpty()
@@ -11,7 +11,7 @@ export class CreateRideDto {
 
   @IsString()
   @IsOptional()
-  driver_uid?: string;
+  driver_email?: string;
 
   @IsString()
   @IsOptional()

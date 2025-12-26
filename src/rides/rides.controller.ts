@@ -22,14 +22,14 @@ export class RidesController {
     return this.svc.findById(id);
   }
 
-  @Get('passenger/:uid')
-  findByPassenger(@Param('uid') uid: string) {
-    return this.svc.findByPassengerUid(uid);
+  @Get('passenger/:email')
+  findByPassenger(@Param('email') email: string) {
+    return this.svc.findByPassengerEmail(email);
   }
 
-  @Get('driver/:uid')
-  findByDriver(@Param('uid') uid: string) {
-    return this.svc.findByDriverUid(uid);
+  @Get('driver/:email')
+  findByDriver(@Param('email') email: string) {
+    return this.svc.findByDriverEmail(email);
   }
 
   @Patch(':id')
