@@ -3,20 +3,16 @@ import { Document, Types } from 'mongoose';
 
 export type DriverDocument = Driver & Document;
 
-@Schema({ timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } })
+@Schema({ timestamps: true })
 export class Driver {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true, unique: true })
   user: Types.ObjectId;
 
   @Prop({ required: true, unique: true })
-  email: string;
+  phone: string;
 
   @Prop({ required: true })
   name: string;
-
-  @Prop({ required: true })
-  @Prop({ required: true, unique: true })
-  phone: string;
 
   @Prop({ required: true })
   license_number: string;
@@ -42,11 +38,29 @@ export class Driver {
   @Prop({ type: Boolean, default: false })
   is_online: boolean;
 
-  @Prop({ type: Object, default: null })
-  current_location: any;
+  @Prop({
+    type: {
+      type: String,
+      enum: ['Point'],
+      default: 'Point',
+    },
+    coordinates: {
+      type: [Number],
+      required: true,
+    },
+  })
+  current_location: {
+    type: 'Point';
+    coordinates: number[];
+  };
 
   @Prop({ type: String, default: null })
   profile_image?: string;
+
+  @Prop({ type: Boolean, default: true })
+  is_active: boolean;
 }
 
 export const DriverSchema = SchemaFactory.createForClass(Driver);
+
+DriverSchema.index({ current_location: '2dsphere' });

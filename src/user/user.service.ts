@@ -1,223 +1,354 @@
-import { Injectable, BadRequestException, NotFoundException, UnauthorizedException, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  UnauthorizedException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
-import { InjectModel } from '@nestjs/mongoose';
-import { User, UserDocument } from './schemas/user.schema';
-import { Model } from 'mongoose';
+import { UserRepository } from './index';
 import { HashService } from './hash.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
-import { TwoFactorAuthService } from '../two-factor/verification.service';
 import { UpdateProfileDto } from './dto/update-profile';
 import { EmailService } from './email.service';
 
+// Service to handle user-related operations such as registration, password management, and profile updates
 @Injectable()
 export class UserService {
   constructor(
-    @InjectModel(User.name) private userModel: Model<UserDocument>,
-    private hashService: HashService,
-    private twoFactorAuthService: TwoFactorAuthService,
-    private emailService: EmailService
+    private readonly userRepository: UserRepository,
+    private readonly hashService: HashService,
+    private readonly emailService: EmailService,
   ) {}
 
-  async getUserByEmail(email: string) {
-    return this.userModel.findOne({ email }).exec();
+  // Retrieve a user by their email address from the database
+  getUserByEmail(email: string) {
+    return this.userRepository.findOne({ email });
   }
 
-  async getUserById(id: string) {
-    return this.userModel.findById(id).exec();
+  getUserById(id: string) {
+    return this.userRepository.findById(id);
   }
 
+  //Register a new user, hash the password, and save to the database
   async register(createUserDto: CreateUserDto) {
-    console.log('[UserService.register] creating user with email=', createUserDto.email);
-    // validate confirmPassword if provided
-    if ((createUserDto as any).confirmPassword && createUserDto.password !== (createUserDto as any).confirmPassword) {
-      console.log('[UserService.register] password and confirmPassword do not match for email=', createUserDto.email);
-      throw new BadRequestException('Passwords do not match');
-    }
-
-    const createUser = new this.userModel(createUserDto);
     const user = await this.getUserByEmail(createUserDto.email);
     if (user) {
-      console.log('[UserService.register] user already exists for email=', createUserDto.email);
-      throw new BadRequestException();
+      throw new BadRequestException(
+        'Este correo electrónico ya está registrado',
+      );
     }
 
-    createUser.password = await this.hashService.hashPassword(createUser.password);
-    try {
-      const saved = await createUser.save();
-      console.log('[UserService.register] saved user id=', saved._id?.toString());
-      return saved;
-    } catch (err) {
-      console.error('[UserService.register] error saving user', err && (err as any).message ? (err as any).message : err);
-      throw err;
-    }
+    const createUser = {
+      ...createUserDto,
+      password: await this.hashService.hashPassword(createUserDto.password),
+    };
+    return this.userRepository.create(createUser);
   }
 
-  async isEmailVerified(email: string): Promise<{ isVerified: boolean; message: string }> {
+  // Check if the user's email is verified by looking at the isValid field in the database
+  async isEmailVerified(
+    email: string,
+  ): Promise<{ isVerified: boolean; message: string }> {
     const user = await this.getUserByEmail(email);
     if (!user) {
-        throw new BadRequestException('El usuario con el correo proporcionado no existe.');
+      throw new BadRequestException(
+        'El usuario con el correo proporcionado no existe.',
+      );
     }
-    
-    if (user.isValid) {
-        return { isVerified: true, message: 'Correo verificado con éxito.' };
-    } else {
-        return { isVerified: false, message: 'El correo aún no está verificado.' };
-    }
-}
 
-async verifyEmail(email: string): Promise<boolean> {
-  const user = await this.getUserByEmail(email);
-  
-  if (!user) {
+    if (user.isValid) {
+      return { isVerified: true, message: 'Correo verificado con éxito.' };
+    } else {
+      return {
+        isVerified: false,
+        message: 'El correo aún no está verificado.',
+      };
+    }
+  }
+
+  // Verify the user's email by setting the isValid field to true in the database
+  async verifyEmail(email: string): Promise<boolean> {
+    const user = await this.getUserByEmail(email);
+
+    if (!user) {
       throw new BadRequestException('Usuario no existe.');
-  }
-  
-  if (user.isValid) {
+    }
+
+    if (user.isValid) {
       throw new BadRequestException('Correo ya verificado.');
-  }
-  
-  try {
+    }
+
+    try {
       user.isValid = true;
       await user.save();
       return true;
-  } catch {
+    } catch {
       throw new BadRequestException('Error al verificar correo.');
+    }
   }
-}
 
-async sendVerificationEmail(email: string): Promise<boolean> {
-  const user = await this.getUserByEmail(email);
-  
-  if (!user) {
+  // Verify the user's email by setting the isValid field to true in the database
+  async sendVerificationEmail(email: string): Promise<boolean> {
+    const user = await this.getUserByEmail(email);
+
+    if (!user) {
       throw new BadRequestException('Usuario no existe.');
-  }
+    }
 
-  if (user.isValid) {
-      throw new BadRequestException('Correo ya verificado. No se puede reenviar.');
-  }
-  
-  try {
+    if (user.isValid) {
+      throw new BadRequestException(
+        'Correo ya verificado. No se puede reenviar.',
+      );
+    }
+
+    try {
       await this.emailService.sendVerificationEmail(user.email);
       return true;
-  } catch {
+    } catch {
       throw new BadRequestException('Error al enviar correo.');
-  }
-}
-
-
-  async updateUserToken(email: string, token: string) {
-    return this.userModel.findOneAndUpdate({ email }, { token, isValid: false }).exec();
-  }
-
-  async validateUserToken(email: string, token: string) {
-    const user = await this.getUserByEmail(email);
-    if (user && user.token === token && !user.isValid) {
-      user.isValid = true;
-      await user.save();
-      return true;
-    }
-    return false;
-  }
-
-  async sendVerificationToken(email: string): Promise<void> {
-    const user = await this.getUserByEmail(email);
-    if (user?.isTokenEnabled) {
-      try {
-        await this.twoFactorAuthService.sendToken(email);
-      } catch (error) {
-        throw new InternalServerErrorException('Failed to send verification token.');
-      }
     }
   }
 
-  async resendVerificationToken(email: string): Promise<void> {
+  // Update the user's token status (enable or disable) in the database
+  async updateTokenStatus(email: string, isTokenEnabled: boolean) {
     const user = await this.getUserByEmail(email);
-    if (user?.isTokenEnabled) {
-      try {
-        await this.twoFactorAuthService.resendToken(email);
-      } catch (error) {
-        throw new InternalServerErrorException('Failed to resend verification token.');
-      }
+    if (!user) {
+      throw new UnauthorizedException('Usuario no encontrado.');
     }
+    user.isTokenEnabled = isTokenEnabled;
+    await user.save();
+    return { msg: 'Seguridad de la cuenta actualizada con éxito.' };
   }
 
+  // Get the user's token status (enabled or disabled) from the database
+  async getTokenStatus(email: string) {
+    const user = await this.getUserByEmail(email);
+    if (!user) {
+      throw new UnauthorizedException('Usuario no encontrado.');
+    }
+    return { isTokenEnabled: !!user.isTokenEnabled };
+  }
+
+  // Change the user's password by verifying the current password and updating it with the new password in the database
   async changePassword(email: string, changePasswordDto: ChangePasswordDto) {
     const user = await this.getUserByEmail(email);
     if (!user) {
       throw new NotFoundException('Usuario no encontrado');
     }
 
-    const isPasswordValid = await this.hashService.comparePassword(changePasswordDto.currentPassword, user.password);
+    const isPasswordValid = await this.hashService.comparePassword(
+      changePasswordDto.currentPassword,
+      user.password,
+    );
     if (!isPasswordValid) {
       throw new UnauthorizedException('Contraseña actual incorrecta');
     }
 
-    if (changePasswordDto.newPassword !== changePasswordDto.confirmNewPassword) {
+    // Prevent changing to the same password
+    const isSameAsCurrent = await this.hashService.comparePassword(
+      changePasswordDto.newPassword,
+      user.password,
+    );
+    if (isSameAsCurrent) {
+      throw new BadRequestException(
+        'La nueva contraseña no puede ser igual a la anterior',
+      );
+    }
+
+    // Prevent password changes more than once within a 10-minute window
+    const TEN_MINUTES_MS = 10 * 60 * 1000;
+    if (user.lastPasswordChange) {
+      const elapsed = Date.now() - user.lastPasswordChange;
+      if (elapsed < TEN_MINUTES_MS) {
+        const remainingMinutes = Math.ceil(
+          (TEN_MINUTES_MS - elapsed) / (60 * 1000),
+        );
+        throw new BadRequestException(
+          `No puedes cambiar la contraseña hasta pasados ${remainingMinutes} minuto(s) desde la última modificación.`,
+        );
+      }
+    }
+
+    if (
+      changePasswordDto.newPassword !== changePasswordDto.confirmNewPassword
+    ) {
       throw new BadRequestException('Las nuevas contraseñas no coinciden');
     }
 
-    user.password = await this.hashService.hashPassword(changePasswordDto.newPassword);
+    user.password = await this.hashService.hashPassword(
+      changePasswordDto.newPassword,
+    );
+    user.lastPasswordChange = Date.now();
     await user.save();
     return { message: 'Contraseña actualizada con éxito' };
   }
 
-  async updateProfile(email: string, updateProfileDto: UpdateProfileDto) {
+  // Update the user's profile information (first name, last name, and email) in the database
+  async updateProfile(
+    email: string,
+    updateProfileDto: UpdateProfileDto,
+    req?: any,
+  ) {
     const user = await this.getUserByEmail(email);
     if (!user) {
       throw new NotFoundException('Usuario no encontrado');
     }
-  
-    user.firstName = updateProfileDto.firstName || user.firstName;
-    user.lastName = updateProfileDto.lastName || user.lastName;
-    
-    if (updateProfileDto.email) {
-      const existingUser = await this.userModel.findOne({ email: updateProfileDto.email });
+
+    // Prevent profile updates more than once within a 10-minute window
+    const TEN_MINUTES_MS = 10 * 60 * 1000;
+    if (user.lastProfileUpdate) {
+      const elapsed = Date.now() - user.lastProfileUpdate;
+      if (elapsed < TEN_MINUTES_MS) {
+        const remainingMinutes = Math.ceil(
+          (TEN_MINUTES_MS - elapsed) / (60 * 1000),
+        );
+        throw new BadRequestException(
+          `No puedes actualizar tu perfil hasta pasados ${remainingMinutes} minuto(s) desde la última modificación.`,
+        );
+      }
+    }
+
+    const providedFirstName =
+      updateProfileDto.firstName !== undefined &&
+      updateProfileDto.firstName !== null;
+    const providedLastName =
+      updateProfileDto.lastName !== undefined &&
+      updateProfileDto.lastName !== null;
+    const providedEmail =
+      updateProfileDto.email !== undefined && updateProfileDto.email !== null;
+
+    const firstNameChanged =
+      providedFirstName && updateProfileDto.firstName !== user.firstName;
+    const lastNameChanged =
+      providedLastName && updateProfileDto.lastName !== user.lastName;
+    const emailChanged = providedEmail && updateProfileDto.email !== user.email;
+
+    // If none of the provided fields actually change the stored values, reject the update
+    if (!firstNameChanged && !lastNameChanged && !emailChanged) {
+      if ((providedFirstName || providedLastName) && !providedEmail) {
+        throw new BadRequestException(
+          'Debes usar nombres diferentes al anterior',
+        );
+      } else if (providedEmail && !providedFirstName && !providedLastName) {
+        throw new BadRequestException(
+          'Debes usar un correo diferente al anterior',
+        );
+      } else {
+        throw new BadRequestException(
+          'Debes proporcionar valores diferentes a los actuales',
+        );
+      }
+    }
+
+    // If email is being changed, ensure it's not already used by another user
+    if (providedEmail && emailChanged) {
+      const existingUser = await this.userRepository.findOne({
+        email: updateProfileDto.email,
+      });
       if (existingUser && existingUser.email !== email) {
         throw new BadRequestException('El correo electrónico ya está en uso');
       }
-      user.email = updateProfileDto.email;
+      user.email = updateProfileDto.email!;
     }
-  
+
+    if (firstNameChanged) user.firstName = updateProfileDto.firstName!;
+    if (lastNameChanged) user.lastName = updateProfileDto.lastName!;
+
+    // update lastProfileUpdate timestamp
+    user.lastProfileUpdate = Date.now();
     await user.save();
-    return { message: 'Perfil actualizado con éxito' };
-  }
 
-  // Ensure a user exists for the given email; create a minimal user if missing.
-  async ensureUserByEmail(email: string, fullName?: string) {
-    if (!email) throw new BadRequestException('Email required to ensure user');
+    const result = { message: 'Perfil actualizado con éxito' };
 
-    const user = await this.getUserByEmail(email);
-    // Do NOT create a minimal user here. Only return existing user or null.
-    return user || null;
-  }
-
-  // Ensure a full User record exists for the given email. If it doesn't, create
-  // one using the provided password or a generated secure password. Returns the
-  // created or existing User.
-  async ensureFullUserByEmail(email: string, fullName?: string, password?: string) {
-    if (!email) throw new BadRequestException('Email required to ensure user');
-
-    const existing = await this.getUserByEmail(email);
-    if (existing) return existing;
-
-    const [firstName, ...rest] = (fullName || '').split(' ');
-    const lastName = rest.join(' ') || '';
-    const pw = password || (Math.random().toString(36).slice(-12) + 'A1!a');
-
-    try {
-      return await this.register({
-        firstName: firstName || '',
-        lastName: lastName,
-        email,
-        password: pw,
-        confirmPassword: pw,
-      });
-    } catch (err: any) {
-      // If user was created concurrently, return the existing user
-      if (err instanceof BadRequestException) {
-        return this.getUserByEmail(email);
+    if (req) {
+      const updatedUser = await this.getUserByEmail(
+        updateProfileDto.email || email,
+      );
+      if (!updatedUser) {
+        throw new BadRequestException(
+          'Error al actualizar sesión del usuario.',
+        );
       }
-      throw err;
+
+      return new Promise((resolve, reject) => {
+        req.login(updatedUser, (err) => {
+          if (err) {
+            reject(
+              new BadRequestException(
+                'Error al actualizar sesión del usuario.',
+              ),
+            );
+          } else {
+            resolve(result);
+          }
+        });
+      });
     }
+
+    return result;
+  }
+
+  async setHasPassengerProfile(userId: string, value: boolean): Promise<void> {
+    await this.userRepository.findByIdAndUpdate(userId, {
+      hasPassengerProfile: value,
+    });
+  }
+
+  async setHasDriverProfile(userId: string, value: boolean): Promise<void> {
+    await this.userRepository.findByIdAndUpdate(userId, {
+      hasDriverProfile: value,
+    });
+  }
+
+  async hasPassengerProfile(userId: string): Promise<boolean> {
+    const user = await this.getUserById(userId);
+    return user?.hasPassengerProfile || false;
+  }
+
+  async hasDriverProfile(userId: string): Promise<boolean> {
+    const user = await this.getUserById(userId);
+    return user?.hasDriverProfile || false;
+  }
+
+  // Sanitize search query to prevent ReDoS attacks
+  private sanitizeSearchQuery(q: string): string {
+    if (!q || typeof q !== 'string') return '';
+    // Limit input length to 50 characters
+    const truncated = q.substring(0, 50);
+    // Escape regex special characters
+    return truncated.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  // Search users by query -- supports partial name/email and exact ObjectId
+  async searchUsers(q: string) {
+    if (!q) return [];
+
+    // Sanitize input to prevent ReDoS attacks - escape regex special characters
+    const sanitized = this.sanitizeSearchQuery(q);
+    if (!sanitized) return [];
+
+    const regex = new RegExp(sanitized, 'i');
+    const or: any[] = [
+      { email: regex },
+      { firstName: regex },
+      { lastName: regex },
+    ];
+
+    // If q looks like a Mongo ObjectId, include exact _id match
+    if (/^[0-9a-fA-F]{24}$/.test(q)) {
+      or.push({ _id: q });
+    }
+
+    // Enforce maximum limit of 20 results to prevent abuse
+    const MAX_LIMIT = 20;
+    const users = await this.userRepository
+      .find({ $or: or })
+      .limit(MAX_LIMIT)
+      .select('-password')
+      .lean()
+      .exec();
+
+    return users;
   }
 }

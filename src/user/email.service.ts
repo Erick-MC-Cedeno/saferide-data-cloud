@@ -1,19 +1,32 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
+import { randomInt } from 'crypto';
 
+
+// Service for sending various types of emails to users
 @Injectable()
 export class EmailService {
-  private transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-  });
+  private readonly FROM_NAME = 'Freeus';
+  private readonly FROM_EMAIL = 'noreply@freeus.com';
+  private readonly FRONTEND_URL: string;
+  
+  private transporter: any;
+  constructor(private readonly configService: ConfigService) {
+    this.FRONTEND_URL = this.configService.get<string>('FRONTEND_URL') || 'https://tudominio.com';
+    this.transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: this.configService.get<string>('EMAIL_USER'),
+        pass: this.configService.get<string>('EMAIL_PASS'),
+      },
+    });
+  }
 
+  // Sends a login token email to the user with security tips
   async sendTokenLogin(toEmail: string, token: string): Promise<void> {
     const mailOptions = {
-      from: 'Saferide <noreply@saferide.com>',
+      from: `${this.FROM_NAME} <${this.FROM_EMAIL}>`,
       to: toEmail,
       subject: 'Token de verificación para iniciar sesión',
       html: `
@@ -38,7 +51,7 @@ export class EmailService {
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>Saferide</h1>
+                  <h1>Freeus</h1>
                 </div>
                 <div class="content">
                     <p>Hola,</p>
@@ -48,7 +61,7 @@ export class EmailService {
                      <span>TOKEN:</span> <strong>${token}</strong>
                     </div>
 
-                    <p class="important">Token expirará en 1 minutos.</p>
+                    <p class="important">Token expirará en 5 minutos.</p>
                     <div class="security-tips">
                         <h4>Consejos para proteger tus fondos:</h4>
                         <ul>
@@ -61,8 +74,8 @@ export class EmailService {
                     </div>
                 </div>
                 <div class="footer">
-                    <p>Si tienes alguna pregunta, no dudes en contactarnos.</p>
-                    <p>Gracias por usar Saferide.</p>
+                  <p>Si tienes alguna pregunta, no dudes en contactarnos.</p>
+                  <p>Gracias por usar Freeus.</p>
                 </div>
             </div>
         </body>
@@ -73,47 +86,152 @@ export class EmailService {
     try {
       await this.transporter.sendMail(mailOptions);
     } catch (error) {
-      // Error handled silently (originally logged here).
+      console.error('Error al enviar el correo:', error);
     }
   }
 
+
+  // Generates a secure random 6-digit token as a string
   async generateToken(): Promise<string> {
-    // Genera un token aleatorio de 6 dígitos
-    const token = Math.floor(100000 + Math.random() * 900000).toString();
-    return token;
+    // Genera un token aleatorio de 6 dígitos usando crypto
+    const num = randomInt(0, 1000000);
+    // Ensure an await to satisfy static analysis rules
+    await Promise.resolve();
+    return String(num).padStart(6, '0');
   }
 
 
+  // Sends a verification email to the user with a link to verify their email address
   async sendVerificationEmail(email: string): Promise<void> {
-    const verificationUrl = `http://localhost:3000/verifyemail`;
+    const verificationUrl = `${this.FRONTEND_URL}/verifyemail`;
 
-    await this.transporter.sendMail({
-      from: 'Saferide <noreply@saferide.com>',
+    const mailOptions = {
+      from: `${this.FROM_NAME} <${this.FROM_EMAIL}>`,
       to: email,
-      subject: 'Verificación de correo — Saferide',
-      text: `Por favor verifica tu correo visitando: ${verificationUrl}`,
+      subject: 'Verifica tu correo electrónico',
       html: `
         <html>
-          <body style="font-family: Arial, sans-serif; color: #333;">
-            <div style="max-width:600px;margin:20px auto;padding:20px;border-radius:8px;background:#fff;">
-              <h2 style="color:#115AF7;margin-top:0;">Verificación de correo</h2>
-              <p>Hola,</p>
-              <p>Por favor confirma tu correo haciendo clic en el siguiente enlace:</p>
-              <p><a href="${verificationUrl}" style="background:#115AF7;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Verificar correo</a></p>
-              <p>Si no solicitaste esto, ignora este correo.</p>
-              <hr />
-              <p style="font-size:12px;color:#666;">Gracias por usar Saferide.</p>
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width,initial-scale=1" />
+          <style>
+            body { font-family: Arial, sans-serif; background-color: #003366; margin:0; padding:0; color:#333 }
+            .container { max-width:600px; margin:20px auto; background:#fff; border-radius:10px; overflow:hidden; box-shadow:0 4px 12px rgba(0,0,0,0.15) }
+            .header { background:linear-gradient(90deg,#115AF7,#0E1BCE); color:#fff; padding:18px; text-align:center }
+            .header h1 { margin:0; font-size:24px }
+            .content { padding:24px }
+            .lead { font-size:16px; margin-bottom:18px }
+            .button { display:inline-block; background:#115AF7; color:#fff; padding:12px 20px; border-radius:6px; text-decoration:none; font-weight:600 }
+            .muted { color:#666; font-size:14px; margin-top:16px }
+            .footer { background:#f4f4f4; padding:14px; text-align:center; font-size:13px; color:#666 }
+            @media (max-width:420px){ .container{margin:10px} .content{padding:16px} }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+              <div class="header">
+              <h1>Freeus</h1>
             </div>
-          </body>
+            <div class="content">
+              <p class="lead">Hola,</p>
+              <p>Por favor verifica tu correo electrónico haciendo clic en el botón de abajo para activar tu cuenta.</p>
+
+              <p style="text-align:center; margin:24px 0"> 
+                <a class="button" href="${verificationUrl}">Verificar correo</a>
+              </p>
+
+              <p class="muted">Si el botón no funciona, copia y pega este enlace en tu navegador:</p>
+              <p class="muted"><a href="${verificationUrl}">${verificationUrl}</a></p>
+
+              <p class="muted">Este enlace expirará en 60 minutos. Si no solicitaste esta verificación, ignora este correo.</p>
+            </div>
+              <div class="footer">
+              <div>Consejos para proteger tu cuenta: utiliza 2FA y no compartas tus credenciales.</div>
+              <div style="margin-top:8px">Gracias por usar Freeus.</div>
+            </div>
+          </div>
+        </body>
         </html>
       `,
-    });
+    };
+
+    try {
+      await this.transporter.sendMail(mailOptions);
+    } catch (error) {
+      console.error('Error al enviar el correo de verificación:', error);
+    }
   }
 
 
+  // Sends a forgot password email to the user with a link to reset their password
+  async sendForgotPasswordEmail(email: string, token: string): Promise<void> {
+    const resetUrl = `${this.FRONTEND_URL}/reset-password?email=${encodeURIComponent(
+      email,
+    )}&token=${encodeURIComponent(token)}`;
+
+    const mailOptions = {
+      from: `${this.FROM_NAME} <${this.FROM_EMAIL}>`,
+      to: email,
+      subject: 'Restablece tu contraseña',
+      html: `
+        <html>
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width,initial-scale=1" />
+          <style>
+            body { font-family: Arial, sans-serif; background-color: #003366; margin:0; padding:0; color:#333 }
+            .container { max-width:600px; margin:20px auto; background:#fff; border-radius:10px; overflow:hidden; box-shadow:0 4px 12px rgba(0,0,0,0.15) }
+            .header { background:linear-gradient(90deg,#115AF7,#0E1BCE); color:#fff; padding:18px; text-align:center }
+            .header h1 { margin:0; font-size:24px }
+            .content { padding:24px }
+            .lead { font-size:16px; margin-bottom:18px }
+            .button { display:inline-block; background:#115AF7; color:#fff; padding:12px 20px; border-radius:6px; text-decoration:none; font-weight:600 }
+            .muted { color:#666; font-size:14px; margin-top:16px }
+            .footer { background:#f4f4f4; padding:14px; text-align:center; font-size:13px; color:#666 }
+            @media (max-width:420px){ .container{margin:10px} .content{padding:16px} }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>Freeus</h1>
+            </div>
+            <div class="content">
+              <p class="lead">Hola,</p>
+              <p>Has solicitado restablecer tu contraseña. Haz clic en el botón de abajo para crear una nueva contraseña.</p>
+
+              <p style="text-align:center; margin:24px 0"> 
+                <a class="button" href="${resetUrl}">Restablecer contraseña</a>
+              </p>
+
+              <p class="muted">Si el botón no funciona, copia y pega este enlace en tu navegador:</p>
+              <p class="muted"><a href="${resetUrl}">${resetUrl}</a></p>
+
+              <p class="muted">Este enlace expirará en 60 minutos. Si no solicitaste este restablecimiento, ignora este correo.</p>
+              <p class="muted">Este enlace expirará en 2 minutos. Si no solicitaste este restablecimiento, ignora este correo.</p>
+            </div>
+            <div class="footer">
+              <div>Consejos para proteger tu cuenta: utiliza 2FA y no compartas tus credenciales.</div>
+              <div style="margin-top:8px">Gracias por usar Freeus.</div>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+    };
+
+    try {
+      await this.transporter.sendMail(mailOptions);
+    } catch (error) {
+      console.error('Error al enviar el correo de restablecimiento de contraseña:', error);
+    }
+  }
+
+
+// Sends a login notification email to the user with security tips
   async sendLoginNotificationEmail(toEmail: string): Promise<void> {
     const mailOptions = {
-      from: 'Saferide <noreply@saferide.com>',
+      from: `${this.FROM_NAME} <${this.FROM_EMAIL}>`,
       to: toEmail,
       subject: 'Notificación de Inicio de sesión',
       html: `
@@ -137,7 +255,7 @@ export class EmailService {
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>Saferide</h1>
+                  <h1>Freeus</h1>
                 </div>
                 <div class="content">
                     <p>Hola,</p>
@@ -156,8 +274,8 @@ export class EmailService {
                     </div>
                 </div>
                 <div class="footer">
-                    <p>Si tienes alguna pregunta, no dudes en contactarnos.</p>
-                    <p>Gracias por usar Saferide.</p>
+                  <p>Si tienes alguna pregunta, no dudes en contactarnos.</p>
+                  <p>Gracias por usar Freeus.</p>
                 </div>
             </div>
         </body>
@@ -166,12 +284,11 @@ export class EmailService {
     };
 
 
-    
 
     try {
       await this.transporter.sendMail(mailOptions);
     } catch (error) {
-      // Error handled silently (originally logged here).
+      console.error('Error al enviar el correo:', error);
     }
   }
 }

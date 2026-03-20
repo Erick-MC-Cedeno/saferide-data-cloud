@@ -3,20 +3,16 @@ import { Document, Types } from 'mongoose';
 
 export type PassangerDocument = Passanger & Document;
 
-@Schema({ timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } })
+@Schema({ timestamps: true })
 export class Passanger {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true, unique: true })
   user: Types.ObjectId;
 
   @Prop({ required: true, unique: true })
-  email: string;
+  phone: string;
 
   @Prop({ required: true })
   name: string;
-
-  @Prop({ required: true })
-  @Prop({ required: true, unique: true })
-  phone: string;
 
   @Prop({ type: Number, default: 0.0 })
   rating: number;
@@ -27,14 +23,8 @@ export class Passanger {
   @Prop({ type: String, default: null })
   profile_image?: string;
 
-  @Prop({ type: String, unique: true, sparse: true })
-  uid?: string;
+  @Prop({ type: Boolean, default: true })
+  is_active: boolean;
 }
 
 export const PassangerSchema = SchemaFactory.createForClass(Passanger);
-
-// Ensure uid is unique only when present (ignore documents without uid/null)
-PassangerSchema.index(
-  { uid: 1 },
-  { unique: true, partialFilterExpression: { uid: { $exists: true, $ne: null } } },
-);

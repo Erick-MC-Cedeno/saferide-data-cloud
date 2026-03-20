@@ -1,114 +1,240 @@
-import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Driver, DriverDocument } from './driver.schema';
-import { CreateDriverDto } from './dto/create-driver.dto';
-import { UpdateDriverDto } from './dto/update-driver.dto';
+import { CreateDriverProfileDto } from './dto/create-driver-profile.dto';
+import { UpdateDriverProfileDto } from './dto/update-driver-profile.dto';
 import { UserService } from '../user/user.service';
-import { PassangerService } from '../passanger/passanger.service';
 
 @Injectable()
 export class DriverService {
   constructor(
     @InjectModel(Driver.name) private driverModel: Model<DriverDocument>,
     private readonly userService: UserService,
-    @Inject(forwardRef(() => PassangerService)) private readonly passangerService: PassangerService,
   ) {}
 
-  async create(data: CreateDriverDto) {
-    const [firstName, ...rest] = (data.name || '').split(' ');
-    const lastName = rest.join(' ') || '';
-
-    // Ensure the user/email is not already registered in users
-    const existingUser = await this.userService.getUserByEmail(data.email).catch(() => null);
-    if (existingUser) {
-      throw new BadRequestException('Email already registered');
+  async createProfile(
+    userId: string,
+    dto: CreateDriverProfileDto,
+  ): Promise<DriverDocument> {
+    const user = await this.userService.getUserById(userId);
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
     }
 
-    // If passwords were provided, ensure they match
-    if (data.password || (data as any).confirmPassword) {
-      if (!data.password || !(data as any).confirmPassword || data.password !== (data as any).confirmPassword) {
-        throw new BadRequestException('Passwords do not match');
-      }
+    const exists = await this.driverModel.findOne({
+      user: new Types.ObjectId(userId),
+    });
+    if (exists) {
+      throw new BadRequestException(
+        'El usuario ya tiene un perfil de conductor',
+      );
     }
 
-    const ensured = await this.userService
-      .ensureFullUserByEmail(data.email, `${firstName} ${lastName}`, data.password)
-      .catch((e) => {
-        console.error('[DriverService] ensureFullUserByEmail error', e && (e as any).message ? (e as any).message : e);
-        return null;
+    const phoneExists = await this.driverModel.findOne({ phone: dto.phone });
+    if (phoneExists) {
+      throw new BadRequestException('Este número de teléfono ya está en uso');
+    }
+
+    const driver = new this.driverModel({
+      user: new Types.ObjectId(userId),
+      name: dto.name,
+      phone: dto.phone,
+      license_number: dto.license_number,
+      vehicle_plate: dto.vehicle_plate,
+      vehicle_model: dto.vehicle_model,
+      vehicle_year: dto.vehicle_year,
+      profile_image: dto.profile_image,
+    });
+    await driver.save();
+
+    await this.userService.setHasDriverProfile(userId, true);
+
+    return driver;
+  }
+
+  async getByUserId(userId: string): Promise<DriverDocument | null> {
+    return this.driverModel.findOne({ user: new Types.ObjectId(userId) });
+  }
+
+  async getActiveByUserId(userId: string): Promise<DriverDocument | null> {
+    return this.driverModel.findOne({
+      user: new Types.ObjectId(userId),
+      is_active: true,
+    });
+  }
+
+  async getByEmail(email: string): Promise<DriverDocument | null> {
+    return this.driverModel.findOne({ email });
+  }
+
+  async updateProfile(
+    userId: string,
+    dto: UpdateDriverProfileDto,
+  ): Promise<DriverDocument> {
+    const driver = await this.getActiveByUserId(userId);
+    if (!driver) {
+      throw new NotFoundException('Perfil de conductor no encontrado');
+    }
+
+    if (dto.phone && dto.phone !== driver.phone) {
+      const phoneExists = await this.driverModel.findOne({
+        phone: dto.phone,
+        _id: { $ne: driver._id },
       });
-
-    if (ensured) {
-      try {
-        if ((ensured as any).role !== 'driver') {
-          (ensured as any).role = 'driver';
-          await (ensured as any).save();
-        }
-      } catch (e) {
-        console.error('[DriverService] failed to set role on user', e && (e as any).message ? (e as any).message : e);
+      if (phoneExists) {
+        throw new BadRequestException('Este número de teléfono ya está en uso');
       }
-      data.user = (ensured as any)._id.toString();
     }
 
-    // prevent duplicates within drivers
-    const existsDriver = await this.driverModel.findOne({ $or: [{ email: data.email }, { phone: data.phone }] }).exec();
-    if (existsDriver) {
-      throw new BadRequestException('Driver with this email or phone already exists');
+    Object.assign(driver, dto);
+    await driver.save();
+    return driver;
+  }
+
+  async deleteProfile(userId: string): Promise<void> {
+    const driver = await this.getByUserId(userId);
+    if (!driver) {
+      throw new NotFoundException('Perfil de conductor no encontrado');
     }
 
-    // prevent duplicates across passengers
-    const passengerByEmail = await this.passangerService.findByEmail(data.email).catch(() => null);
-    const passengerByPhone = await this.passangerService.findByPhone(data.phone).catch(() => null);
-    if (passengerByEmail || passengerByPhone) {
-      throw new BadRequestException('Email or phone already registered as a passenger');
+    driver.is_online = false;
+    driver.is_active = false;
+    await driver.save();
+    await this.userService.setHasDriverProfile(userId, false);
+  }
+
+  async reactivateProfile(
+    userId: string,
+    dto: CreateDriverProfileDto,
+  ): Promise<DriverDocument> {
+    let driver = await this.getByUserId(userId);
+
+    if (driver) {
+      driver.is_active = true;
+      driver.name = dto.name || driver.name;
+      driver.phone = dto.phone || driver.phone;
+      if (dto.profile_image) driver.profile_image = dto.profile_image;
+      await driver.save();
+    } else {
+      driver = await this.createProfile(userId, dto);
     }
 
-    const payload: Partial<Driver> = {
-      email: data.email,
-      name: data.name,
-      phone: data.phone,
-      license_number: (data as any).licenseNumber || (data as any).license_number,
-      vehicle_plate: (data as any).vehiclePlate || (data as any).vehicle_plate,
-      vehicle_model: (data as any).vehicleModel || (data as any).vehicle_model,
-      vehicle_year: (data as any).vehicleYear || (data as any).vehicle_year,
-      // Always start as not verified when registering a driver; verification should be done separately
-      is_verified: false,
+    await this.userService.setHasDriverProfile(userId, true);
+    return driver;
+  }
+
+  async setOnlineStatus(
+    userId: string,
+    isOnline: boolean,
+  ): Promise<DriverDocument> {
+    const driver = await this.getActiveByUserId(userId);
+    if (!driver) {
+      throw new NotFoundException('Perfil de conductor no encontrado');
+    }
+
+    driver.is_online = isOnline;
+    if (!isOnline) {
+      driver.current_location = null as any;
+    }
+    await driver.save();
+    return driver;
+  }
+
+  async updateLocation(
+    userId: string,
+    coordinates: [number, number],
+  ): Promise<DriverDocument> {
+    const driver = await this.getActiveByUserId(userId);
+    if (!driver) {
+      throw new NotFoundException('Perfil de conductor no encontrado');
+    }
+
+    if (!driver.is_online) {
+      throw new BadRequestException(
+        'El conductor debe estar online para actualizar ubicación',
+      );
+    }
+
+    driver.current_location = {
+      type: 'Point',
+      coordinates: coordinates,
     };
+    await driver.save();
+    return driver;
+  }
 
-    if (data.user) {
-      payload.user = data.user as any;
+  async getNearbyDrivers(
+    latitude: number,
+    longitude: number,
+    radiusKm: number = 10,
+  ): Promise<any[]> {
+    return this.driverModel
+      .aggregate([
+        {
+          $geoNear: {
+            near: {
+              type: 'Point',
+              coordinates: [longitude, latitude],
+            },
+            distanceField: 'distance',
+            maxDistance: radiusKm * 1000,
+            spherical: true,
+          },
+        },
+        {
+          $match: {
+            is_active: true,
+            is_online: true,
+            current_location: { $exists: true, $ne: null },
+          },
+        },
+        {
+          $addFields: {
+            distance_km: { $round: [{ $divide: ['$distance', 1000] }, 2] },
+          },
+        },
+        {
+          $sort: { distance: 1 },
+        },
+      ])
+      .exec();
+  }
+
+  async getActiveOnlineDrivers(): Promise<DriverDocument[]> {
+    return this.driverModel.find({
+      is_active: true,
+      is_online: true,
+    });
+  }
+
+  async existsForUser(userId: string): Promise<boolean> {
+    const driver = await this.driverModel.findOne({
+      user: new Types.ObjectId(userId),
+      is_active: true,
+    });
+    return !!driver;
+  }
+
+  async addRating(userId: string, rating: number): Promise<void> {
+    const driver = await this.getActiveByUserId(userId);
+    if (!driver) return;
+
+    const newTotalRatings = driver.rating * driver.total_trips + rating;
+    driver.total_trips += 1;
+    driver.rating = newTotalRatings / driver.total_trips;
+    await driver.save();
+  }
+
+  async incrementTrips(userId: string): Promise<void> {
+    const driver = await this.getActiveByUserId(userId);
+    if (driver) {
+      driver.total_trips += 1;
+      await driver.save();
     }
-
-    const created = new this.driverModel(payload);
-    const driver = await created.save();
-    return { user: ensured, driver };
-  }
-
-  async findByPhone(phone: string) {
-    return this.driverModel.findOne({ phone }).exec();
-  }
-
-  async findByEmail(email: string) {
-    return this.driverModel.findOne({ email }).exec();
-  }
-
-  async findAllOnline() {
-    return this.driverModel.find({ is_online: true }).exec();
-  }
-
-  async findAll() {
-    return this.driverModel.find().exec();
-  }
-
-  async updateByEmail(email: string, data: UpdateDriverDto) {
-    if (data.email) {
-      const user = await this.userService.getUserByEmail(data.email).catch(() => null);
-      if (user) (data as any).user = user._id;
-    }
-
-    const updated = await this.driverModel.findOneAndUpdate({ email }, data as any, { new: true });
-    if (!updated) throw new NotFoundException('Driver not found');
-    return updated;
   }
 }

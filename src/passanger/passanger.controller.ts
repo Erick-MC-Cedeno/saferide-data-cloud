@@ -1,33 +1,80 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Patch,
+  Post,
+  UseGuards,
+  Delete,
+  NotFoundException,
+} from '@nestjs/common';
 import { PassangerService } from './passanger.service';
-import { CreatePassangerDto } from './dto/create-passanger.dto';
-import { UpdatePassangerDto } from './dto/update-passanger.dto';
+import { CreatePassangerProfileDto } from './dto/create-passanger-profile.dto';
+import { UpdatePassangerProfileDto } from './dto/update-passanger-profile.dto';
+import { DeletePassangerProfileDto } from './dto/delete-passanger-profile.dto';
 import { AuthenticatedGuard } from '../guard/auth/authenticated.guard';
+import { CurrentUser } from '../guard/auth/current-user.decorator';
 
 @Controller('passangers')
 export class PassangerController {
-  constructor(private readonly svc: PassangerService) {}
+  constructor(private readonly service: PassangerService) {}
 
-  @Post()
-  async create(@Body() body: CreatePassangerDto) {
-    return this.svc.create(body);
+  @Post('profile')
+  @UseGuards(AuthenticatedGuard)
+  async createProfile(
+    @CurrentUser() user: any,
+    @Body() dto: CreatePassangerProfileDto,
+  ) {
+    return this.service.createProfile(user._id.toString(), dto);
   }
 
-  @Get()
+  @Get('profile')
   @UseGuards(AuthenticatedGuard)
-  findAll() {
-    return this.svc.findAll();
+  async getProfile(@CurrentUser() user: any) {
+    const passenger = await this.service.getByUserId(user._id.toString());
+    if (!passenger) {
+      throw new NotFoundException('Perfil de pasajero no encontrado');
+    }
+    return passenger;
   }
 
-  @Get(':email')
+  @Patch('profile')
   @UseGuards(AuthenticatedGuard)
-  findByEmail(@Param('email') email: string) {
-    return this.svc.findByEmail(email);
+  async updateProfile(
+    @CurrentUser() user: any,
+    @Body() dto: UpdatePassangerProfileDto,
+  ) {
+    return this.service.updateProfile(user._id.toString(), dto);
   }
 
+  @Delete('profile')
   @UseGuards(AuthenticatedGuard)
-  @Patch(':email')
-  update(@Param('email') email: string, @Body() body: UpdatePassangerDto) {
-    return this.svc.updateByEmail(email, body);
+  async deleteProfile(
+    @CurrentUser() user: any,
+    @Body() dto: DeletePassangerProfileDto,
+  ) {
+    await this.service.deleteProfile(user._id.toString());
+    return { message: 'Perfil de pasajero desactivado' };
+  }
+
+  @Post('profile/reactivate')
+  @UseGuards(AuthenticatedGuard)
+  async reactivateProfile(
+    @CurrentUser() user: any,
+    @Body() dto: CreatePassangerProfileDto,
+  ) {
+    return this.service.reactivateProfile(user._id.toString(), dto);
+  }
+
+  @Get('me/rides')
+  @UseGuards(AuthenticatedGuard)
+  async getMyRides(@CurrentUser() user: any) {
+    return [];
+  }
+
+  @Get('me/active-ride')
+  @UseGuards(AuthenticatedGuard)
+  async getActiveRide(@CurrentUser() user: any) {
+    return null;
   }
 }

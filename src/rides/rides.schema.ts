@@ -1,12 +1,13 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
+import { RideStatus } from './enums/ride-status.enum';
 
 export type RideDocument = Ride & Document;
 
-@Schema({ timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } })
+@Schema({ timestamps: true })
 export class Ride {
-  @Prop({ type: Types.ObjectId, ref: 'Passanger', required: false })
-  passenger?: Types.ObjectId;
+  @Prop({ type: Types.ObjectId, ref: 'Passanger', required: true })
+  passenger: Types.ObjectId;
 
   @Prop({ required: true })
   passenger_email: string;
@@ -14,7 +15,7 @@ export class Ride {
   @Prop({ required: true })
   passenger_name: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'Driver', required: false })
+  @Prop({ type: Types.ObjectId, ref: 'Driver' })
   driver?: Types.ObjectId;
 
   @Prop()
@@ -27,19 +28,20 @@ export class Ride {
   pickup_address: string;
 
   @Prop({ type: [Number], required: true })
-  pickup_coordinates: number[]; // [longitude, latitude]
+  pickup_coordinates: number[];
 
   @Prop({ required: true })
   destination_address: string;
 
   @Prop({ type: [Number], required: true })
-  destination_coordinates: number[]; // [longitude, latitude]
+  destination_coordinates: number[];
 
   @Prop({
-    enum: ['pending', 'accepted', 'in-progress', 'completed', 'cancelled'],
-    default: 'pending',
+    type: String,
+    enum: Object.values(RideStatus),
+    default: RideStatus.PENDING,
   })
-  status: string;
+  status: RideStatus;
 
   @Prop({ type: Number, required: true })
   estimated_fare: number;
@@ -48,7 +50,7 @@ export class Ride {
   actual_fare?: number;
 
   @Prop({ type: Number, required: true })
-  estimated_duration: number; // minutes
+  estimated_duration: number;
 
   @Prop()
   requested_at?: Date;
@@ -68,11 +70,17 @@ export class Ride {
   @Prop()
   passenger_comment?: string;
 
-  @Prop({ type: Number })
+  @Prop({ type: Number, min: 1, max: 5 })
   passenger_rating?: number;
 
-  @Prop({ type: Number })
+  @Prop({ type: Number, min: 1, max: 5 })
   driver_rating?: number;
+
+  @Prop({ type: String })
+  driver_comment?: string;
+
+  @Prop({ type: Boolean, default: false })
+  ride_chat_enabled: boolean;
 }
 
 export const RideSchema = SchemaFactory.createForClass(Ride);

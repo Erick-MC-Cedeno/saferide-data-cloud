@@ -1,106 +1,152 @@
-import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Passanger, PassangerDocument } from './passanger.schema';
-import { CreatePassangerDto } from './dto/create-passanger.dto';
-import { UpdatePassangerDto } from './dto/update-passanger.dto';
+import { CreatePassangerProfileDto } from './dto/create-passanger-profile.dto';
+import { UpdatePassangerProfileDto } from './dto/update-passanger-profile.dto';
 import { UserService } from '../user/user.service';
-import { DriverService } from '../driver/driver.service';
 
 @Injectable()
 export class PassangerService {
   constructor(
-    @InjectModel(Passanger.name) private passangerModel: Model<PassangerDocument>,
+    @InjectModel(Passanger.name)
+    private passangerModel: Model<PassangerDocument>,
     private readonly userService: UserService,
-    @Inject(forwardRef(() => DriverService)) private readonly driverService: DriverService,
   ) {}
 
-  async create(data: CreatePassangerDto) {
-    const [firstName, ...rest] = (data.name || '').split(' ');
-    const lastName = rest.join(' ') || '';
-
-    // Validate that the email is not already registered in `users`.
-    const existingUser = await this.userService.getUserByEmail(data.email).catch(() => null);
-    if (existingUser) {
-      throw new BadRequestException('Email already registered');
+  async createProfile(
+    userId: string,
+    dto: CreatePassangerProfileDto,
+  ): Promise<PassangerDocument> {
+    const user = await this.userService.getUserById(userId);
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
     }
 
-    // If passwords were provided, ensure they match
-    if (data.password || (data as any).confirmPassword) {
-      if (!data.password || !(data as any).confirmPassword || data.password !== (data as any).confirmPassword) {
-        throw new BadRequestException('Passwords do not match');
+    const exists = await this.passangerModel.findOne({
+      user: new Types.ObjectId(userId),
+    });
+    if (exists) {
+      throw new BadRequestException(
+        'El usuario ya tiene un perfil de pasajero',
+      );
+    }
+
+    const phoneExists = await this.passangerModel.findOne({ phone: dto.phone });
+    if (phoneExists) {
+      throw new BadRequestException('Este número de teléfono ya está en uso');
+    }
+
+    const passenger = new this.passangerModel({
+      user: new Types.ObjectId(userId),
+      name: dto.name,
+      phone: dto.phone,
+      profile_image: dto.profile_image,
+    });
+    await passenger.save();
+
+    await this.userService.setHasPassengerProfile(userId, true);
+
+    return passenger;
+  }
+
+  async getByUserId(userId: string): Promise<PassangerDocument | null> {
+    return this.passangerModel.findOne({ user: new Types.ObjectId(userId) });
+  }
+
+  async getActiveByUserId(userId: string): Promise<PassangerDocument | null> {
+    return this.passangerModel.findOne({
+      user: new Types.ObjectId(userId),
+      is_active: true,
+    });
+  }
+
+  async getByEmail(email: string): Promise<PassangerDocument | null> {
+    return this.passangerModel.findOne({ email });
+  }
+
+  async updateProfile(
+    userId: string,
+    dto: UpdatePassangerProfileDto,
+  ): Promise<PassangerDocument> {
+    const passenger = await this.getActiveByUserId(userId);
+    if (!passenger) {
+      throw new NotFoundException('Perfil de pasajero no encontrado');
+    }
+
+    if (dto.phone && dto.phone !== passenger.phone) {
+      const phoneExists = await this.passangerModel.findOne({
+        phone: dto.phone,
+        _id: { $ne: passenger._id },
+      });
+      if (phoneExists) {
+        throw new BadRequestException('Este número de teléfono ya está en uso');
       }
     }
 
-    // Ensure there is a full `User` record for this email (creates if missing).
-    const ensured = await this.userService.ensureFullUserByEmail(data.email, `${firstName} ${lastName}`, data.password).catch((e) => {
-      console.error('[PassangerService] ensureFullUserByEmail error', e && (e as any).message ? (e as any).message : e);
-      return null;
+    Object.assign(passenger, dto);
+    await passenger.save();
+    return passenger;
+  }
+
+  async deleteProfile(userId: string): Promise<void> {
+    const passenger = await this.getByUserId(userId);
+    if (!passenger) {
+      throw new NotFoundException('Perfil de pasajero no encontrado');
+    }
+
+    passenger.is_active = false;
+    await passenger.save();
+    await this.userService.setHasPassengerProfile(userId, false);
+  }
+
+  async reactivateProfile(
+    userId: string,
+    dto: CreatePassangerProfileDto,
+  ): Promise<PassangerDocument> {
+    let passenger = await this.getByUserId(userId);
+
+    if (passenger) {
+      passenger.is_active = true;
+      passenger.name = dto.name || passenger.name;
+      passenger.phone = dto.phone || passenger.phone;
+      if (dto.profile_image) passenger.profile_image = dto.profile_image;
+      await passenger.save();
+    } else {
+      passenger = await this.createProfile(userId, dto);
+    }
+
+    await this.userService.setHasPassengerProfile(userId, true);
+    return passenger;
+  }
+
+  async existsForUser(userId: string): Promise<boolean> {
+    const passenger = await this.passangerModel.findOne({
+      user: new Types.ObjectId(userId),
+      is_active: true,
     });
-    if (ensured) {
-      // ensure role is set to passenger
-      try {
-        if ((ensured as any).role !== 'passenger') {
-          (ensured as any).role = 'passenger';
-          await (ensured as any).save();
-        }
-      } catch (e) {
-        console.error('[PassangerService] failed to set role on user', e && (e as any).message ? (e as any).message : e);
-      }
-      data.user = (ensured as any)._id.toString();
-    }
-
-    // prevent duplicates within passangers
-    const existsPassanger = await this.passangerModel.findOne({ $or: [{ email: data.email }, { phone: data.phone }] }).exec();
-    if (existsPassanger) {
-      throw new BadRequestException('Passanger with this email or phone already exists');
-    }
-
-    // prevent duplicates across drivers
-    const driverByEmail = await this.driverService.findByEmail(data.email).catch(() => null);
-    const driverByPhone = await this.driverService.findByPhone(data.phone).catch(() => null);
-    if (driverByEmail || driverByPhone) {
-      throw new BadRequestException('Email or phone already registered as a driver');
-    }
-
-    const payload: Partial<Passanger> = {
-      email: data.email,
-      name: data.name,
-      phone: data.phone,
-    };
-
-    if (data.user) {
-      payload.user = data.user as any;
-    }
-
-    const created = new this.passangerModel(payload);
-    const passanger = await created.save();
-    return { user: ensured, passanger };
+    return !!passenger;
   }
 
-  async findByEmail(email: string) {
-    return this.passangerModel.findOne({ email }).exec();
+  async addRating(userId: string, rating: number): Promise<void> {
+    const passenger = await this.getActiveByUserId(userId);
+    if (!passenger) return;
+
+    const newTotalRatings = passenger.rating * passenger.total_trips + rating;
+    passenger.total_trips += 1;
+    passenger.rating = newTotalRatings / passenger.total_trips;
+    await passenger.save();
   }
 
-  async findByPhone(phone: string) {
-    return this.passangerModel.findOne({ phone }).exec();
-  }
-
-  async findAll() {
-    return this.passangerModel.find().exec();
-  }
-
-  async updateByEmail(email: string, data: UpdatePassangerDto) {
-    // if email changed, try to link user
-    if (data.email) {
-      const user = await this.userService.getUserByEmail(data.email).catch(() => null);
-      if (user) (data as any).user = user._id;
+  async incrementTrips(userId: string): Promise<void> {
+    const passenger = await this.getActiveByUserId(userId);
+    if (passenger) {
+      passenger.total_trips += 1;
+      await passenger.save();
     }
-
-    const updated = await this.passangerModel.findOneAndUpdate({ email }, data as any, {
-      new: true,
-    });
-    if (!updated) throw new NotFoundException('Passanger not found');
-    return updated;
   }
 }

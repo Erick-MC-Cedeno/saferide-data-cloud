@@ -1,121 +1,117 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 
-import { createClient } from 'redis'
+import * as express from 'express';
+import { join } from 'path';
 
 import session from 'express-session';
 import passport from 'passport';
 import { ValidationPipe } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { csrfSync } from 'csrf-sync';
+import helmet from 'helmet';
+import { RedisService } from './shared/redis';
 
-// Bootstrap the NestJS application: configure CORS, global pipes,
-// Redis-backed session store, Passport initialization and start the server.
+
+// This is the main entry point of the application. It sets up the NestJS application, configures CORS, global prefix, validation pipes, session management with Redis, and initializes Passport for authentication. Finally, it starts the application on the specified port.
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Environment is loaded by ConfigService; avoid logging env variables here.
-
+  app.use(helmet());
+  
+  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()) || ['http://localhost:3000'];
   app.enableCors({
-    origin: ['http://localhost:3000'],
+    origin: allowedOrigins,
     credentials: true
-  })
+  });
 
-  app.setGlobalPrefix('secure/api');
+
+  app.setGlobalPrefix('secure/api', {
+    exclude: ['csrf-token', ''],
+  });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
+      forbidNonWhitelisted: true
     })
   );
   
-  const configService = app.get(ConfigService);
 
-  
+  const redisService = app.get(RedisService);
+  const redisStore = redisService.getStore();
 
-  const redisClient = createClient({
-    socket: {
-      host: configService.get<string>('REDIS_HOST') as string,
-      port: parseInt(configService.get<string>('REDIS_PORT') as string)
-    }
-  });
-
-  redisClient.on('error', (err) => {
-    console.error('Redis Client Error', err);
-  });
-
-  // attempt to connect to Redis but don't block startup indefinitely
-  let redisConnected = true;
-  try {
-    await Promise.race([
-      redisClient.connect(),
-      new Promise((_res, rej) => setTimeout(() => rej(new Error('Redis connect timeout')), 5000)),
-    ]);
-  } catch (err) {
-    console.error('Could not connect to Redis, proceeding without Redis store:', err);
-    redisConnected = false;
-  }
-
-  const connectRedisModule = require('connect-redis');
-
-  let RedisStoreClass: any = null;
-  try {
-    if (typeof connectRedisModule === 'function') {
-      RedisStoreClass = connectRedisModule(session);
-    } else if (connectRedisModule && typeof connectRedisModule.default === 'function') {
-      RedisStoreClass = connectRedisModule.default(session);
-    } else if (connectRedisModule && typeof connectRedisModule.RedisStore === 'function') {
-      RedisStoreClass = connectRedisModule.RedisStore(session);
-    } else if (connectRedisModule && typeof connectRedisModule.default === 'object' && typeof connectRedisModule.default === 'function') {
-      RedisStoreClass = connectRedisModule.default;
-    }
-  } catch (err) {
-  }
-
-  if (!RedisStoreClass) {
-    const maybeDefault = connectRedisModule && (connectRedisModule.default ?? (connectRedisModule as any).ConnectRedis ?? (connectRedisModule as any).RedisStore);
-    if (typeof maybeDefault === 'function') {
-      try {
-        RedisStoreClass = maybeDefault(session);
-      } catch (e) {
-        RedisStoreClass = maybeDefault;
-      }
-    }
-  }
-
-  if (!RedisStoreClass) {
-    throw new Error('Failed to resolve RedisStore from connect-redis module. Please check the installed connect-redis version.');
-  }
-
-  let redisStoreInstance: any;
-  try {
-    if (redisConnected) {
-      try {
-        redisStoreInstance = new RedisStoreClass({ client: redisClient });
-      } catch (err) {
-        // some connect-redis builds export a factory function
-        redisStoreInstance = RedisStoreClass({ client: redisClient });
-      }
-    }
-  } catch (err) {
-    console.error('Failed to initialize Redis store, falling back to MemoryStore:', err);
-    redisStoreInstance = undefined;
-  }
-
-  const sessionOptions: any = {
-    secret: configService.get<string>('TOKEN_SECRET') as string,
-    resave: false,
-    saveUninitialized: false,
-    cookie: { maxAge: parseInt(configService.get<string>('EXPIRE_IN') as string) },
+  const isProduction = process.env.NODE_ENV === 'production';
+  const sessionCookie = {
+    maxAge: parseInt(process.env.EXPIRE_IN!),
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'strict' : 'lax',
+    path: '/'
   };
 
-  if (redisStoreInstance) sessionOptions.store = redisStoreInstance;
-
-  app.use(session(sessionOptions));
+  app.use(
+    session({
+      store: redisStore,
+      secret: process.env.TOKEN_SECRET!,
+      resave: false,
+      saveUninitialized: false,
+      cookie: sessionCookie
+    })
+  );
 
   app.use(passport.initialize());
   app.use(passport.session());
 
-  await app.listen(parseInt(configService.get<string>('PORT') as string));
+  const { csrfSynchronisedProtection } = csrfSync({
+    ignoredMethods: ['GET', 'HEAD', 'OPTIONS'],
+  });
+  
+  const csrfMiddleware = (req: any, res: any, next: any) => {
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+      return next();
+    }
+    
+    const skipPaths = [
+      '/secure/api/user/login', 
+      '/secure/api/user/register', 
+      '/secure/api/user/resend-token', 
+      '/secure/api/user/forgot-password', 
+      '/secure/api/user/reset-password',
+      '/secure/api/user/verify-token',
+      '/secure/api/user/logout',
+      '/secure/api/user/update-token-status',
+      '/secure/api/csrf-token'
+    ];
+    const shouldSkip = skipPaths.some(p => req.path.startsWith(p));
+    if (shouldSkip) {
+      return next();
+    }
+    
+    return csrfSynchronisedProtection(req, res, next);
+  };
+  
+  app.use(csrfMiddleware);
+
+  app.use('/uploads', express.static(join(__dirname, '..', 'uploads')));
+
+  app.enableShutdownHooks();
+
+  const server = await app.listen(parseInt(process.env.PORT!));
+  
+  const signals: NodeJS.Signals[] = ['SIGTERM', 'SIGINT', 'SIGQUIT'];
+  signals.forEach(sig => {
+    process.on(sig, async () => {
+      console.log(`\n[SHUTDOWN] Received ${sig}, closing gracefully...`);
+      try {
+        await app.close();
+        console.log('[SHUTDOWN] All connections closed');
+        process.exit(0);
+      } catch (err) {
+        console.error('[SHUTDOWN] Error during shutdown:', err);
+        process.exit(1);
+      }
+    });
+  });
+
+  return server;
 }
 bootstrap();

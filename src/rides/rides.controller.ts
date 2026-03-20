@@ -1,51 +1,74 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { RidesService } from './rides.service';
+import { CreateRideRequestDto } from './dto/create-ride-request.dto';
+import { RateRideDto } from './dto/rate-ride.dto';
 import { AuthenticatedGuard } from '../guard/auth/authenticated.guard';
-import { CreateRideDto } from './dto/create-ride.dto';
-import { UpdateRideDto } from './dto/update-ride.dto';
+import { CurrentUser } from '../guard/auth/current-user.decorator';
 
 @Controller('rides')
 export class RidesController {
-  constructor(private readonly svc: RidesService) {}
+  constructor(private readonly service: RidesService) {}
 
-  @Post()
-  create(@Body() body: CreateRideDto) {
-    return this.svc.create(body);
+  @Post('request')
+  @UseGuards(AuthenticatedGuard)
+  async requestRide(
+    @CurrentUser() user: any,
+    @Body() dto: CreateRideRequestDto,
+  ) {
+    return this.service.requestRide(user._id.toString(), dto);
   }
 
-  @Get()
+  @Post(':id/accept')
   @UseGuards(AuthenticatedGuard)
-  findAll() {
-    return this.svc.findAll();
+  async acceptRide(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.service.acceptRide(user._id.toString(), id);
   }
 
-  @Get(':id')
+  @Post(':id/start')
   @UseGuards(AuthenticatedGuard)
-  findById(@Param('id') id: string) {
-    return this.svc.findById(id);
+  async startRide(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.service.startRide(user._id.toString(), id);
   }
 
-  @Get('passenger/:email')
+  @Post(':id/complete')
   @UseGuards(AuthenticatedGuard)
-  findByPassenger(@Param('email') email: string) {
-    return this.svc.findByPassengerEmail(email);
-  }
-
-  @Get('driver/:email')
-  @UseGuards(AuthenticatedGuard)
-  findByDriver(@Param('email') email: string) {
-    return this.svc.findByDriverEmail(email);
-  }
-
-  @Patch(':id')
-  @UseGuards(AuthenticatedGuard)
-  update(@Param('id') id: string, @Body() body: UpdateRideDto) {
-    return this.svc.updateById(id, body);
+  async completeRide(
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+    @Body() body: { actual_fare?: number },
+  ) {
+    return this.service.completeRide(user._id.toString(), id, body.actual_fare);
   }
 
   @Post(':id/cancel')
   @UseGuards(AuthenticatedGuard)
-  cancel(@Param('id') id: string, @Body() body: { reason?: string; passenger_comment?: string }) {
-    return this.svc.cancelRide(id, body?.reason, body?.passenger_comment);
+  async cancelRide(
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+    @Body() body: { reason?: string },
+  ) {
+    return this.service.cancelRide(user._id.toString(), id, body.reason);
+  }
+
+  @Post(':id/rate')
+  @UseGuards(AuthenticatedGuard)
+  async rateRide(
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+    @Body() dto: RateRideDto,
+  ) {
+    return this.service.rateRide(user._id.toString(), id, dto);
+  }
+
+  @Get(':id')
+  @UseGuards(AuthenticatedGuard)
+  async getRide(@Param('id') id: string) {
+    return this.service.getRideById(id);
+  }
+
+  @Get(':id/messages')
+  @UseGuards(AuthenticatedGuard)
+  async getRideMessages(@Param('id') id: string) {
+    return [];
   }
 }
