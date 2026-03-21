@@ -81,6 +81,18 @@ export class Ride {
 
   @Prop({ type: Boolean, default: false })
   ride_chat_enabled: boolean;
+
+  @Prop({ type: String, default: null })
+  preferred_driver_id?: string;
+
+  @Prop({ type: [{ lat: Number, lng: Number }], default: [] })
+  route_points: { lat: number; lng: number }[];
+
+  @Prop({ type: Number })
+  route_distance_m?: number;
+
+  @Prop({ type: Number })
+  route_duration_s?: number;
 }
 
 export const RideSchema = SchemaFactory.createForClass(Ride);

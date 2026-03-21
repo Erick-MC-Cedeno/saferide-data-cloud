@@ -113,6 +113,9 @@ export class MessagesAndMultimediaService implements OnModuleInit {
       sender: new Types.ObjectId(senderId),
       receiver: new Types.ObjectId(dto.receiverId),
       multimediaId: dto.multimediaId ? new Types.ObjectId(dto.multimediaId) : undefined,
+      ...(dto.rideId && Types.ObjectId.isValid(dto.rideId)
+        ? { ride: new Types.ObjectId(dto.rideId) }
+        : {}),
     });
 
     // Build minimal payload to return and to emit as domain event
@@ -292,4 +295,51 @@ export class MessagesAndMultimediaService implements OnModuleInit {
   }
 
   
+  /**
+   * Obtener todos los mensajes asociados a un ride específico,
+   * ordenados cronológicamente (más antiguos primero, para mostrar el chat).
+   */
+  async getMessagesByRide(rideId: string) {
+    if (!rideId || !Types.ObjectId.isValid(rideId)) {
+      throw new BadRequestException('Invalid rideId');
+    }
+
+    const messages = await this.messageRepository
+      .find({ ride: new Types.ObjectId(rideId) })
+      .select('_id content type sender receiver multimediaId multimediaStatus status duration createdAt updatedAt')
+      .sort({ createdAt: 1 })
+      .lean()
+      .exec() as any[];
+
+    const multimediaIds = messages
+      .filter((d: any) => d.multimediaId)
+      .map((d: any) => d.multimediaId.toString());
+
+    const multimediaMap: Map<string, any> = new Map();
+    if (multimediaIds.length > 0) {
+      const uniq = Array.from(new Set(multimediaIds));
+      const mDocs = await this.multimediaRepository
+        .find({ _id: { $in: uniq } })
+        .select('_id url thumbnailUrl status duration')
+        .lean()
+        .exec() as any[];
+      for (const m of mDocs) multimediaMap.set(m._id?.toString(), m);
+    }
+
+    return messages.map((doc: any) => ({
+      _id: doc._id,
+      content: doc.content,
+      type: doc.type,
+      sender: doc.sender?.toString(),
+      receiver: doc.receiver?.toString(),
+      multimediaId: doc.multimediaId,
+      multimediaStatus: doc.multimediaStatus || (multimediaMap.get(doc.multimediaId?.toString())?.status ?? null),
+      multimediaUrl: multimediaMap.get(doc.multimediaId?.toString())?.url ?? undefined,
+      thumbnailUrl: multimediaMap.get(doc.multimediaId?.toString())?.thumbnailUrl ?? undefined,
+      duration: multimediaMap.get(doc.multimediaId?.toString())?.duration ?? doc.duration ?? undefined,
+      status: doc.status,
+      createdAt: doc.createdAt,
+      updatedAt: doc.updatedAt,
+    }));
+  }
 }

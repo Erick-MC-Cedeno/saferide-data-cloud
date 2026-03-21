@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   UnauthorizedException,
+  Logger,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -14,14 +15,19 @@ import { RateRideDto } from './dto/rate-ride.dto';
 import { PassangerService } from '../passanger/passanger.service';
 import { DriverService } from '../driver/driver.service';
 import { UserService } from '../user/user.service';
+import { RoutingService } from '../routing/routing.service';
+import { RouteResult } from '../routing/interfaces/route-result.interface';
 
 @Injectable()
 export class RidesService {
+  private readonly logger = new Logger(RidesService.name);
+
   constructor(
     @InjectModel(Ride.name) private rideModel: Model<RideDocument>,
     private readonly passengerService: PassangerService,
     private readonly driverService: DriverService,
     private readonly userService: UserService,
+    private readonly routingService: RoutingService,
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
@@ -29,13 +35,15 @@ export class RidesService {
     userId: string,
     dto: CreateRideRequestDto,
   ): Promise<RideDocument> {
+    // 1. Verificar que el pasajero tenga perfil completo
     const passenger = await this.passengerService.getActiveByUserId(userId);
     if (!passenger) {
-      throw new NotFoundException(
-        'Perfil de pasajero no encontrado o inactivo',
+      throw new BadRequestException(
+        'Debes completar el formulario de pasajero antes de solicitar un viaje',
       );
     }
 
+    // 2. Verificar que no tenga un viaje activo
     const existingActiveRide = await this.rideModel.findOne({
       passenger: passenger._id,
       status: { $in: RIDE_ACTIVE_STATUSES },
@@ -44,8 +52,60 @@ export class RidesService {
       throw new BadRequestException('Ya tienes un viaje activo en progreso');
     }
 
+    // 3. Verificar que hay conductores disponibles cerca ANTES de crear el ride
+    const { pickup_coordinates } = dto;
+    const nearbyDrivers = await this.driverService.getNearbyDrivers(
+      pickup_coordinates[1], // lat
+      pickup_coordinates[0], // lng
+      10, // radio por defecto 10 km
+    );
+
+    if (!nearbyDrivers || nearbyDrivers.length === 0) {
+      throw new NotFoundException(
+        'No hay conductores disponibles en tu área en este momento',
+      );
+    }
+
+    // 4. Si se especificó un driver preferido, verificar que está en la lista de disponibles
+    if (dto.preferred_driver_id) {
+      const preferredExists = nearbyDrivers.some(
+        (d: any) =>
+          d._id?.toString() === dto.preferred_driver_id ||
+          d.user?.toString() === dto.preferred_driver_id,
+      );
+      if (!preferredExists) {
+        throw new NotFoundException(
+          'El conductor seleccionado no está disponible en este momento',
+        );
+      }
+    }
+
     const user = await this.userService.getUserById(userId);
 
+    // 5. Calcular ruta con OSRM
+    const [originLng, originLat] = dto.pickup_coordinates;
+    const [destLng, destLat] = dto.destination_coordinates;
+
+    let routeData: RouteResult | null = null;
+    try {
+      routeData = await this.routingService.calculateRoute(
+        originLat,
+        originLng,
+        destLat,
+        destLng,
+      );
+    } catch (err) {
+      this.logger.warn('No se pudo calcular la ruta: ' + err?.message);
+    }
+
+    const routePoints = routeData
+      ? routeData.points.map((p) => ({
+          lat: p.latitude,
+          lng: p.longitude,
+        }))
+      : [];
+
+    // 6. Crear el ride
     const ride = new this.rideModel({
       passenger: passenger._id,
       passenger_email: user?.email || '',
@@ -58,9 +118,14 @@ export class RidesService {
       estimated_duration: dto.estimated_duration,
       status: RideStatus.PENDING,
       requested_at: new Date(),
+      preferred_driver_id: dto.preferred_driver_id || null,
+      route_points: routePoints,
+      route_distance_m: routeData?.distance_m ?? 0,
+      route_duration_s: routeData?.duration_s ?? 0,
     });
     await ride.save();
 
+    // 6. Emitir evento — el gateway decide a quién notificar
     this.eventEmitter.emit('ride.created', ride);
 
     return ride;
@@ -69,8 +134,8 @@ export class RidesService {
   async acceptRide(userId: string, rideId: string): Promise<RideDocument> {
     const driver = await this.driverService.getActiveByUserId(userId);
     if (!driver) {
-      throw new NotFoundException(
-        'Perfil de conductor no encontrado o inactivo',
+      throw new BadRequestException(
+        'Debes completar el formulario de conductor antes de aceptar viajes',
       );
     }
 
@@ -85,6 +150,17 @@ export class RidesService {
 
     if (ride.status !== RideStatus.PENDING) {
       throw new BadRequestException('Este viaje ya no está disponible');
+    }
+
+    // Si era solicitud específica, solo el driver designado puede aceptar
+    if (
+      ride.preferred_driver_id &&
+      ride.preferred_driver_id !== driver._id.toString() &&
+      ride.preferred_driver_id !== userId
+    ) {
+      throw new UnauthorizedException(
+        'Este viaje fue solicitado a otro conductor',
+      );
     }
 
     const passengerActiveRide = await this.rideModel.findOne({
@@ -317,5 +393,54 @@ export class RidesService {
     if (!driver) return [];
 
     return this.rideModel.find({ driver: driver._id }).sort({ createdAt: -1 });
+  }
+
+  /**
+   * Retorna rides PENDING dirigidos a un driver específico por su userId.
+   * Incluye tanto rides con preferred_driver_id apuntando a él,
+   * como rides broadcast (sin preferred_driver_id) para que pueda aceptar cualquiera.
+   */
+  async getRequestsForDriver(userId: string): Promise<RideDocument[]> {
+    const driver = await this.driverService.getActiveByUserId(userId);
+    if (!driver) {
+      throw new BadRequestException(
+        'Debes completar el formulario de conductor para ver solicitudes',
+      );
+    }
+
+    return this.rideModel
+      .find({
+        status: RideStatus.PENDING,
+        $or: [
+          { preferred_driver_id: driver._id.toString() },
+          { preferred_driver_id: userId },
+          { preferred_driver_id: null },
+        ],
+      })
+      .populate('passenger')
+      .sort({ requested_at: -1 });
+  }
+
+  /**
+   * Retorna rides PENDING dirigidos ÚNICAMENTE a este driver (solicitudes directas).
+   */
+  async getDirectRequestsForDriver(userId: string): Promise<RideDocument[]> {
+    const driver = await this.driverService.getActiveByUserId(userId);
+    if (!driver) {
+      throw new BadRequestException(
+        'Debes completar el formulario de conductor para ver solicitudes',
+      );
+    }
+
+    return this.rideModel
+      .find({
+        status: RideStatus.PENDING,
+        $or: [
+          { preferred_driver_id: driver._id.toString() },
+          { preferred_driver_id: userId },
+        ],
+      })
+      .populate('passenger')
+      .sort({ requested_at: -1 });
   }
 }

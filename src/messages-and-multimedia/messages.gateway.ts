@@ -153,4 +153,34 @@ export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect
     client.join(room);
     this.logger.log(`Socket ${client.id} joined chat room ${room}`);
   }
+
+  /**
+   * El pasajero o driver se une al room de chat del viaje.
+   * Solo se permite si el cliente esta autenticado.
+   * El room se llama ride:{rideId} y coincide con el usado en RidesGateway.
+   */
+  @SubscribeMessage('joinRideChat')
+  handleJoinRideChat(client: Socket, payload: { rideId: string }) {
+    if (!this.checkSocketRateLimit(client.id)) {
+      void client.emit('error', { message: 'Rate limit exceeded' });
+      return;
+    }
+
+    if (!client.data?.user || !client.data.user._id) {
+      void client.emit('error', { message: 'Unauthorized' });
+      return;
+    }
+
+    if (!payload?.rideId) {
+      void client.emit('error', { message: 'Missing rideId' });
+      return;
+    }
+
+    const rideRoom = SocketRooms.RIDE(payload.rideId);
+    client.join(rideRoom);
+    this.logger.log(`Socket ${client.id} joined ride chat room ${rideRoom}`);
+
+    // Confirmar al cliente que se unio exitosamente
+    void client.emit('rideChat:joined', { rideId: payload.rideId });
+  }
 }

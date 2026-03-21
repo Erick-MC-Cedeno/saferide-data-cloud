@@ -30,4 +30,9 @@ export class RidesListener {
   handleRideCancelled(ride: any) {
     this.ridesGateway.emitRideCancelled(ride);
   }
+
+  @OnEvent('ride.rated')
+  handleRideRated(ride: any) {
+    this.ridesGateway.emitRideRated(ride);
+  }
 }

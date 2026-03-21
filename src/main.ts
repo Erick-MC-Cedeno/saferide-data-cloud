@@ -61,16 +61,26 @@ async function bootstrap() {
   app.use(passport.initialize());
   app.use(passport.session());
 
-  const { csrfSynchronisedProtection } = csrfSync({
-    ignoredMethods: ['GET', 'HEAD', 'OPTIONS'],
-  });
+  let csrfSynchronisedProtection: any;
+  try {
+    const csrfResult = csrfSync({
+      ignoredMethods: ['GET', 'HEAD', 'OPTIONS'],
+    });
+    csrfSynchronisedProtection = csrfResult.csrfSynchronisedProtection;
+    console.log('[CSRF] Initialized successfully');
+  } catch (error) {
+    console.error('[CSRF] Initialization error:', error);
+    throw error;
+  }
   
   const csrfMiddleware = (req: any, res: any, next: any) => {
+    console.log('[CSRF Debug] Method:', req.method, 'Path:', req.path);
+    
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       return next();
     }
     
-    const skipPaths = [
+   const skipPaths = [
       '/secure/api/user/login', 
       '/secure/api/user/register', 
       '/secure/api/user/resend-token', 
@@ -81,11 +91,14 @@ async function bootstrap() {
       '/secure/api/user/update-token-status',
       '/secure/api/csrf-token'
     ];
-    const shouldSkip = skipPaths.some(p => req.path.startsWith(p));
+
+    const shouldSkip = skipPaths.some(p => req.path.includes(p));
+    console.log('[CSRF Debug] Should skip:', shouldSkip);
     if (shouldSkip) {
       return next();
     }
     
+    console.log('[CSRF Debug] Running CSRF protection for:', req.method, req.path);
     return csrfSynchronisedProtection(req, res, next);
   };
   

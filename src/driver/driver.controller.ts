@@ -9,8 +9,11 @@ import {
   Query,
   NotFoundException,
   BadRequestException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { DriverService } from './driver.service';
+import { RidesService } from '../rides/rides.service';
 import { CreateDriverProfileDto } from './dto/create-driver-profile.dto';
 import { UpdateDriverProfileDto } from './dto/update-driver-profile.dto';
 import { DeleteDriverProfileDto } from './dto/delete-driver-profile.dto';
@@ -21,7 +24,11 @@ import { CurrentUser } from '../guard/auth/current-user.decorator';
 
 @Controller('drivers')
 export class DriverController {
-  constructor(private readonly service: DriverService) {}
+  constructor(
+    private readonly service: DriverService,
+    @Inject(forwardRef(() => RidesService))
+    private readonly ridesService: RidesService,
+  ) {}
 
   @Post('profile')
   @UseGuards(AuthenticatedGuard)
@@ -55,7 +62,7 @@ export class DriverController {
   @UseGuards(AuthenticatedGuard)
   async deleteProfile(
     @CurrentUser() user: any,
-    @Body() dto: DeleteDriverProfileDto,
+    @Body() _dto: DeleteDriverProfileDto,
   ) {
     await this.service.deleteProfile(user._id.toString());
     return { message: 'Perfil de conductor desactivado' };
@@ -111,7 +118,7 @@ export class DriverController {
       throw new BadRequestException('Coordenadas inválidas');
     }
 
-    const radiusKm = radius ? parseFloat(radius) : 1;
+    const radiusKm = radius ? parseFloat(radius) : 10;
 
     if (isNaN(radiusKm) || radiusKm <= 0) {
       throw new BadRequestException('Radio inválido');
@@ -120,21 +127,27 @@ export class DriverController {
     return this.service.getNearbyDrivers(latitude, longitude, radiusKm);
   }
 
+  /** Historial de viajes del conductor autenticado. */
   @Get('me/rides')
   @UseGuards(AuthenticatedGuard)
   async getMyRides(@CurrentUser() user: any) {
-    return [];
+    return this.ridesService.getRidesForDriver(user._id.toString());
   }
 
+  /** Viaje activo actual del conductor autenticado. */
   @Get('me/active-ride')
   @UseGuards(AuthenticatedGuard)
   async getActiveRide(@CurrentUser() user: any) {
-    return null;
+    return this.ridesService.getActiveRideForDriver(user._id.toString());
   }
 
+  /**
+   * Rides en estado PENDING sin driver asignado (broadcast).
+   * Los drivers online pueden ver estos rides y aceptar cualquiera.
+   */
   @Get('pending-rides')
   @UseGuards(AuthenticatedGuard)
   async getPendingRides() {
-    return [];
+    return this.ridesService.getPendingRides();
   }
 }

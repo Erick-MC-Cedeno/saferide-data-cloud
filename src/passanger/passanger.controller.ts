@@ -7,8 +7,11 @@ import {
   UseGuards,
   Delete,
   NotFoundException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { PassangerService } from './passanger.service';
+import { RidesService } from '../rides/rides.service';
 import { CreatePassangerProfileDto } from './dto/create-passanger-profile.dto';
 import { UpdatePassangerProfileDto } from './dto/update-passanger-profile.dto';
 import { DeletePassangerProfileDto } from './dto/delete-passanger-profile.dto';
@@ -17,7 +20,11 @@ import { CurrentUser } from '../guard/auth/current-user.decorator';
 
 @Controller('passangers')
 export class PassangerController {
-  constructor(private readonly service: PassangerService) {}
+  constructor(
+    private readonly service: PassangerService,
+    @Inject(forwardRef(() => RidesService))
+    private readonly ridesService: RidesService,
+  ) {}
 
   @Post('profile')
   @UseGuards(AuthenticatedGuard)
@@ -51,7 +58,7 @@ export class PassangerController {
   @UseGuards(AuthenticatedGuard)
   async deleteProfile(
     @CurrentUser() user: any,
-    @Body() dto: DeletePassangerProfileDto,
+    @Body() _dto: DeletePassangerProfileDto,
   ) {
     await this.service.deleteProfile(user._id.toString());
     return { message: 'Perfil de pasajero desactivado' };
@@ -66,15 +73,17 @@ export class PassangerController {
     return this.service.reactivateProfile(user._id.toString(), dto);
   }
 
+  /** Historial de viajes del pasajero autenticado. */
   @Get('me/rides')
   @UseGuards(AuthenticatedGuard)
   async getMyRides(@CurrentUser() user: any) {
-    return [];
+    return this.ridesService.getRidesForPassenger(user._id.toString());
   }
 
+  /** Viaje activo actual del pasajero autenticado. */
   @Get('me/active-ride')
   @UseGuards(AuthenticatedGuard)
   async getActiveRide(@CurrentUser() user: any) {
-    return null;
+    return this.ridesService.getActiveRideForPassenger(user._id.toString());
   }
 }

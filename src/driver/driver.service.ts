@@ -193,6 +193,25 @@ export class DriverService {
             current_location: { $exists: true, $ne: null },
           },
         },
+        // Excluir drivers que ya tienen un viaje activo (accepted o in-progress)
+        {
+          $lookup: {
+            from: 'rides',
+            let: { driverId: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $eq: ['$driver', '$$driverId'] },
+                  status: { $in: ['accepted', 'in-progress'] },
+                },
+              },
+            ],
+            as: 'activeRides',
+          },
+        },
+        {
+          $match: { activeRides: { $size: 0 } },
+        },
         {
           $addFields: {
             distance_km: { $round: [{ $divide: ['$distance', 1000] }, 2] },

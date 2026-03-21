@@ -2,6 +2,7 @@ import {
   IsArray,
   IsNotEmpty,
   IsNumber,
+  IsOptional,
   IsString,
   ArrayMinSize,
   ArrayMaxSize,
@@ -36,4 +37,8 @@ export class CreateRideRequestDto {
   @IsNumber()
   @Min(0)
   estimated_duration: number;
+
+  @IsOptional()
+  @IsString()
+  preferred_driver_id?: string;
 }

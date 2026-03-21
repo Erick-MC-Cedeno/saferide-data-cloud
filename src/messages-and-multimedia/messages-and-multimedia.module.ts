@@ -25,6 +25,6 @@ export { MultimediaRepository, MessageRepository };
   ],
   controllers: [MessagesAndMultimediaController],
   providers: [MessagesAndMultimediaService, MessagesGateway, LocalStorageProvider, MultimediaProcessor, MultimediaRepository, MessageRepository],
-  exports: [MultimediaRepository, MessageRepository],
+  exports: [MultimediaRepository, MessageRepository, MessagesAndMultimediaService],
 })
 export class MessagesAndMultimediaModule {}

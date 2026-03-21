@@ -23,8 +23,12 @@ export class CreateMessageDto {
   @IsString()
   multimediaId?: string;
 
-  
   @IsString()
   @IsNotEmpty()
   senderId: string;
+
+  /** ID del ride al que pertenece este mensaje (para chats de viaje). */
+  @IsOptional()
+  @IsString()
+  rideId?: string;
 }

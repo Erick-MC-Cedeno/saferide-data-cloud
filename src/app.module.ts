@@ -11,6 +11,7 @@ import { MessagesAndMultimediaModule } from './messages-and-multimedia/messages-
 import { PassangerModule } from './passanger/passanger.module';
 import { DriverModule } from './driver/driver.module';
 import { RidesModule } from './rides/rides.module';
+import { RoutingModule } from './routing/routing.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AppController } from './app.controller';
 import { RedisModule } from './shared/redis';
@@ -42,6 +43,7 @@ import { RedisModule } from './shared/redis';
     PassangerModule,
     DriverModule,
     RidesModule,
+    RoutingModule,
     MessagesAndMultimediaModule,
     AuthModule,
     TwoFactorAuthModule,
